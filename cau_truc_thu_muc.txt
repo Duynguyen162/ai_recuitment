@@ -1,0 +1,59 @@
+ai_recruitment_backend/
+├── app/
+│   ├── api/                  # Lớp Routing (Controllers)
+│   │   ├── v1/
+│   │   │   ├── endpoints/    # Các API cụ thể
+│   │   │   │   ├── auth.py
+│   │   │   │   ├── users.py
+│   │   │   │   ├── jobs.py
+│   │   │   │   └── ai_cv.py
+│   │   │   └── router.py     # Gom các router lại
+│   ├── core/                 # Lớp Cấu hình lõi
+│   │   ├── config.py         # Đọc biến môi trường (JWT, DB URL...)
+│   │   ├── exceptions.py     # Hứng lỗi toàn cục
+│   │   ├── logger.py         # 
+│   │   └── security.py       # Hashing password, tạo JWT token
+│   ├── crud/                 # Lớp tương tác Database (Create, Read, Update, Delete)
+│   │   ├── crud_user.py
+│   │   └── crud_job.py
+│   ├── db/                         # Thiết lập Database
+│   │   ├── database.py             # Khởi tạo engine, session PostgreSQL
+│   │   ├── base_import_class.py    #import tất cả các model để SQLAlchemy load
+│   │   └── base.py                 # Gom các model để Alembic nhận diện
+│   ├── models/                     # SQLAlchemy Models (Ánh xạ 29 bảng CSDL)
+│   │   ├── user.py
+│   │   ├── company.py
+│   │   └── cv.py
+│   ├── schemas/              # Pydantic Models (Validate dữ liệu in/out của API)
+│   │   ├── user_schema.py
+│   │   ├── job_schema.py
+│   │   └── base_schema.py       
+│   ├── services/             # Lớp Business Logic & Gọi API bên ngoài
+│   │   ├── ai_parser.py      # Chứa logic gọi LLM để bóc tách CV
+│   │   ├── email_service.py
+│   │   └── matching.py       # Định dang cấu trúc các API trả về
+│   └── main.py               # File gốc khởi tạo ứng dụng FastAPI
+├── alembic/                  # Thư mục chứa các file migration CSDL
+├── requirements.txt
+└── .env                      # Lưu biến môi trường (không commit lên Git)
+
+
+kích hoạt môi trường ảo:
+    python -m venv venv
+    venv\Scripts\activate
+
+chạy lệnh cài đặt các thư viện:
+    python -m pip install -r requirements.txt
+
+chạy dự án :
+    uvicorn app.main:app --reload
+
+đẩy bảng mới tạo xuống db:
+    #Tạo file migration mới dựa trên sự khác biệt Model SQLAlchemy (code Python) vs Database hiện tại
+        alembic revision --autogenerate -m "create profile and company"
+    # Chạy các migration chưa áp dụng và cập nhật database.
+        alembic upgrade head  
+
+
+tải thư viện mã hóa và tạo JWT
+    pip install "passlib[bcrypt]" python-jose python-multipart
