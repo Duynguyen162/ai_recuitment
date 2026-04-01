@@ -16,5 +16,7 @@ class User(Base):
     status = Column(Enum(StatusEnum), default=StatusEnum.active, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    candidate_profile = relationship("CandidateProfile", back_populates="user", uselist=False)
 
 

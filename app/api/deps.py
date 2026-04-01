@@ -8,7 +8,7 @@ from app.models.user import User
 from app.core.enum import StatusEnum
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
-
+# check token
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
         status_code = status.HTTP_401_UNAUTHORIZED,

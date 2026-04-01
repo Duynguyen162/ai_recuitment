@@ -38,6 +38,10 @@ ai_recruitment_backend/
 └── .env                      # Lưu biến môi trường (không commit lên Git)
 
 
+luồng : post dữ liệu -> validate schemas -> gọi đến file database tạo database session -> gọi crud ->
+tạo SQLAlchemy model -> SQLAlchemy ghi xuống database -> trả dữ liệu về route ->
+FastAPI convert sang Response Schema -> response về client
+
 kích hoạt môi trường ảo:
     python -m venv venv
     venv\Scripts\activate
