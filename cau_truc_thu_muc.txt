@@ -54,7 +54,7 @@ chạy dự án :
 
 đẩy bảng mới tạo xuống db:
     #Tạo file migration mới dựa trên sự khác biệt Model SQLAlchemy (code Python) vs Database hiện tại
-        alembic revision --autogenerate -m "create profile and company"
+        alembic revision --autogenerate -m "comment vô đây"
     # Chạy các migration chưa áp dụng và cập nhật database.
         alembic upgrade head  
 

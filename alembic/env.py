@@ -17,6 +17,7 @@ from app.db.base import Base
 from app.models.user import User  
 from app.models.companies import Company
 from app.models.candidate_profiles import CandidateProfile
+from app.models.candidate_details import CandidateExperience, CandidateEducation, CandidateCertification, CVUpload
 #----------------------------------------------#
 
 
