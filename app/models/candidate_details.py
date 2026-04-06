@@ -9,7 +9,7 @@ class CandidateExperience(Base):
     candidate_id = Column(Integer, ForeignKey("candidate_profiles.id", ondelete="CASCADE"), nullable=False)
     company_name = Column(String(255), nullable=False)
     job_title = Column(String(255), nullable=False)
-    decription = Column(String , nullable=True)
+    description = Column(String , nullable=True)
 
     # back_ref tự động tạo quan hệ ngược (reverse relationship) giữa 2 model mà không cần khai báo ở model còn lại
     candidate = relationship("CandidateProfile", back_populates="experiences")

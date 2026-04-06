@@ -9,3 +9,4 @@ class StatusEnum(enum.Enum):
     active = "active"
     banned = "banned"
     deleted = "deleted"
+
