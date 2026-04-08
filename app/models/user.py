@@ -4,8 +4,6 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 from app.core.enum import RoleEnum, StatusEnum
 
-
-
 class User(Base):
     __tablename__ = "users"
 
@@ -18,5 +16,6 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     candidate_profile = relationship("CandidateProfile", back_populates="user", uselist=False)
+    company_memberships = relationship("CompanyMember", back_populates="user")
 
 

@@ -18,6 +18,24 @@ class Company(Base):
     verification_status = Column(Enum(CompanyVerificationStatusEnum), default=CompanyVerificationStatusEnum.pending, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    verifications = relationship(
+        "CompanyVerification",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
+
+    members = relationship(
+        "CompanyMember",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
+
+    documents = relationship(
+        "CompanyDocument",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
+
 class CompanyVerification(Base):
     __tablename__ = "company_verifications"
 
@@ -28,7 +46,7 @@ class CompanyVerification(Base):
     status = Column(Enum(VerificationLogStatusEnum), default=VerificationLogStatusEnum.pending, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    company = relationship("Company", backref="verifications")
+    company = relationship("Company", back_populates="verifications")
 
 class CompanyMember(Base):
     __tablename__ = "company_members"
@@ -38,8 +56,8 @@ class CompanyMember(Base):
     
     joined_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    company = relationship("Company", backref="members")
-    user = relationship("User", backref="company_memberships")
+    company = relationship("Company", back_populates="members")
+    user = relationship("User", back_populates="company_memberships")
 
 class CompanyDocument(Base):
     __tablename__ = "company_documents"
@@ -51,4 +69,4 @@ class CompanyDocument(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=False)
 
-    company = relationship("Company", backref="documents")
+    company = relationship("Company", back_populates="documents")

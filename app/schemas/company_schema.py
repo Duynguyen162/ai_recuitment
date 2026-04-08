@@ -12,7 +12,9 @@ class CompanyBase(BaseModel):
 
 class CompanyCreate(CompanyBase):
     pass
-
+class CompanyRegisterRequest(CompanyCreate):
+    license_url: str
+    
 class CompanyUpdate(BaseModel):
     name: str | None = None
     logo_url: str | None = None
