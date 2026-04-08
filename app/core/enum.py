@@ -11,12 +11,14 @@ class StatusEnum(str ,enum.Enum):
     deleted = "deleted"
     
 class CompanyVerificationStatusEnum( str ,enum.Enum):
+    """áp dụng cho bảng companies xem có được đăng tin tuyển dụng hay không"""
     pending = "pending"   
     approved = "approved"
     rejected = "rejected" 
     locked = "locked"     
 
 class VerificationLogStatusEnum(str ,enum.Enum):
+    """áp dụng cho company_verifications"""
     pending = "pending"
     approved = "approved"
     rejected = "rejected"

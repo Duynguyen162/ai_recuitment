@@ -76,3 +76,9 @@ class CompanyDocumentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        
+class VerifyRequest(BaseModel):
+    is_approved: bool
+
+class LockRequest(BaseModel):
+    is_locked: bool
