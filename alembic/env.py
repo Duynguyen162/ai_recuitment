@@ -15,9 +15,10 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 # Import Base và CÁC MODEL của bạn vào đây
 from app.db.base import Base
 from app.models.user import User  
-from app.models.companies import Company
+from app.models.companies import Company, CompanyVerification, CompanyMember, CompanyDocument
 from app.models.candidate_profiles import CandidateProfile
 from app.models.candidate_details import CandidateExperience, CandidateEducation, CandidateCertification, CVUpload
+
 #----------------------------------------------#
 
 
