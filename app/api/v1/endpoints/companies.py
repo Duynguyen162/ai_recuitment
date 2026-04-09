@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.database import get_db
+from app.models.companies import CompanyDocument, CompanyMember
 from app.models.user import User
 from app.api.deps import  get_current_user
 from app.core.enum import RoleEnum
-from app.schemas.company_schema import CompanyCreate, CompanyResponse , CompanyRegisterRequest, CompanyUpdate
+from app.schemas.company_schema import CompanyCreate, CompanyDocumentCreate, CompanyDocumentResponse, CompanyResponse , CompanyRegisterRequest, CompanyUpdate
 from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_company
 
@@ -104,3 +105,58 @@ def get_my_company(
         
 #     crud_company.remove_member_from_company(db, current_user.id, member.company_id)
 #     return ResponseSchema(success=True, data="Đã rời khỏi công ty")
+
+@router.get("/my_company/documents", response_model=ResponseSchema[list[CompanyDocumentResponse]])
+def get_my_company_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Lấy danh sách tài liệu/chính sách của công ty HR đang quản lý"""
+    # 1. Tìm công ty của HR
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == current_user.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Bạn không thuộc công ty nào")
+
+    docs = crud_company.get_company_documents(db, member.company_id)
+    return ResponseSchema(
+        success=True,
+        data=[CompanyDocumentResponse.model_validate(d) for d in docs],
+        error=None,
+        meta=None
+    )
+
+@router.post("/my_company/documents", response_model=ResponseSchema[CompanyDocumentResponse])
+def add_company_document(
+    doc_in: CompanyDocumentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """HR thêm một tài liệu mới (sau khi đã upload file lấy URL)"""
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == current_user.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Bạn không thuộc công ty nào")
+
+    new_doc = crud_company.create_company_document(
+        db=db, 
+        company_id=member.company_id, 
+        user_id=current_user.id, 
+        doc_in=doc_in
+    )
+    return ResponseSchema(success=True, data=CompanyDocumentResponse.model_validate(new_doc))
+
+@router.delete("/my_company/documents/{doc_id}")
+def remove_company_document(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Xóa tài liệu công ty"""
+    # Kiểm tra quyền: Tài liệu phải thuộc về công ty của HR này
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == current_user.id).first()
+    doc = db.query(CompanyDocument).filter(CompanyDocument.id == doc_id).first()
+    
+    if not doc or not member or doc.company_id != member.company_id:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xóa tài liệu này")
+
+    crud_company.delete_company_document(db, doc_id)
+    return ResponseSchema(success=True, data="Đã xóa tài liệu thành công")

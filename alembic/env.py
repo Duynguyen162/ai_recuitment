@@ -18,6 +18,7 @@ from app.models.user import User
 from app.models.companies import Company, CompanyVerification, CompanyMember, CompanyDocument
 from app.models.candidate_profiles import CandidateProfile
 from app.models.candidate_details import CandidateExperience, CandidateEducation, CandidateCertification, CVUpload
+from app.models.job_posting import JobPosting
 
 #----------------------------------------------#
 

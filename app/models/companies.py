@@ -9,7 +9,7 @@ from app.db.base import Base
 class Company(Base):
     __tablename__ = "companies"
 
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True, index=True,autoincrement=True)
     name = Column(String, unique=True, index=True)
     logo_url = Column(String, nullable=True)
     description = Column(String, nullable=True)
@@ -35,6 +35,12 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan"
     )
+    
+    job_postings = relationship(
+        "JobPosting",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
 
 class CompanyVerification(Base):
     __tablename__ = "company_verifications"
@@ -50,7 +56,7 @@ class CompanyVerification(Base):
 
 class CompanyMember(Base):
     __tablename__ = "company_members"
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True, index=True,autoincrement=True)
     company_id = Column(BIGINT, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
@@ -61,7 +67,7 @@ class CompanyMember(Base):
 
 class CompanyDocument(Base):
     __tablename__ = "company_documents"
-    id = Column(BIGINT, primary_key=True, index=True)
+    id = Column(BIGINT, primary_key=True, index=True, autoincrement=True)
     company_id = Column(BIGINT, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     upload_by_id = Column(BIGINT, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from app.core.enum import CompanyVerificationStatusEnum , VerificationLogStatusEnum
-from app.models.companies import Company, CompanyVerification, CompanyMember
-from app.schemas.company_schema import CompanyCreate,CompanyUpdate
+from app.models.companies import Company, CompanyDocument, CompanyVerification, CompanyMember
+from app.schemas.company_schema import CompanyCreate, CompanyDocumentCreate,CompanyUpdate
 
 def get_company_by_hr(db: Session , user_id: int):
     """Lấy thông tin công ty mà HR đang quản lý"""
@@ -70,3 +70,28 @@ def remove_member_from_company(db: Session, user_id: int, company_id: int):
         db.delete(member)
         db.commit()
     return True
+
+def get_company_documents(db: Session, company_id: int):
+    """Lấy danh sách tất cả tài liệu của một công ty"""
+    return db.query(CompanyDocument).filter(CompanyDocument.company_id == company_id).all()
+
+def create_company_document(db: Session, company_id: int, user_id: int, doc_in: CompanyDocumentCreate):
+    """Lưu thông tin tài liệu vào DB"""
+    db_doc = CompanyDocument(
+        company_id=company_id,
+        upload_by_id=user_id,
+        file_url=doc_in.file_url
+    )
+    db.add(db_doc)
+    db.commit()
+    db.refresh(db_doc)
+    return db_doc
+
+def delete_company_document(db: Session, doc_id: int):
+    """Xóa tài liệu"""
+    db_doc = db.query(CompanyDocument).filter(CompanyDocument.id == doc_id).first()
+    if db_doc:
+        db.delete(db_doc)
+        db.commit()
+        return True
+    return False
