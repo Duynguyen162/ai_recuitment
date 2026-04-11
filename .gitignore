@@ -61,3 +61,5 @@ htmlcov/
 .cache/
 
 uploads/cvs
+
+secrets/

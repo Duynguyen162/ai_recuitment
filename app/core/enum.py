@@ -32,4 +32,10 @@ class JobStatusEnum(str, enum.Enum):
     draft = "draft"          
     published = "published"   
     paused = "paused"         
-    closed = "closed"         
+    closed = "closed" 
+
+class ApplicationStatusEnum(str ,enum.Enum):
+    applied = "applied"
+    interviewing = "interviewing"
+    hired = "hired"
+    rejected = "rejected"

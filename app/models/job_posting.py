@@ -1,4 +1,3 @@
-# app/models/job_posting.py
 from sqlalchemy import Column, String, BIGINT, Text, ForeignKey, Enum, DateTime
 from sqlalchemy.dialects.postgresql import JSONB 
 from sqlalchemy.orm import relationship
@@ -33,3 +32,4 @@ class JobPosting(Base):
     # Quan hệ
     company = relationship("Company", back_populates="job_postings")
     creator = relationship("User", backref="created_jobs")
+    applications = relationship("Application",back_populates="job_posting",cascade="all, delete-orphan")

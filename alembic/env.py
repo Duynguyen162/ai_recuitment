@@ -19,6 +19,8 @@ from app.models.companies import Company, CompanyVerification, CompanyMember, Co
 from app.models.candidate_profiles import CandidateProfile
 from app.models.candidate_details import CandidateExperience, CandidateEducation, CandidateCertification, CVUpload
 from app.models.job_posting import JobPosting
+from app.models.applications import Application
+from app.models.ai_matching_scores import AiMatchingScore
 
 #----------------------------------------------#
 
