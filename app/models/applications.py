@@ -17,3 +17,5 @@ class Application(Base):
     job_posting = relationship("JobPosting", back_populates="applications")
     candidate_profile = relationship("CandidateProfile", back_populates="applications")
     ai_analysis = relationship("AiMatchingScore",back_populates="application",uselist=False)
+    
+    chat_sessions = relationship("ChatSession", back_populates="application")

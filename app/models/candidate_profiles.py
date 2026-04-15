@@ -2,7 +2,6 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime ,ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB 
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-import enum
 from app.db.base import Base
 
 class CandidateProfile(Base):
@@ -28,3 +27,4 @@ class CandidateProfile(Base):
     certifications = relationship("CandidateCertification", back_populates="candidate", cascade="all, delete-orphan")
     cv_uploads = relationship("CVUpload", back_populates="candidate", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="candidate_profile", cascade="all, delete-orphan")
+    

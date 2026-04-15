@@ -21,6 +21,8 @@ from app.models.candidate_details import CandidateExperience, CandidateEducation
 from app.models.job_posting import JobPosting
 from app.models.applications import Application
 from app.models.ai_matching_scores import AiMatchingScore
+from app.models.chat_messages import ChatMessage
+from app.models.chat_sessions import ChatSession
 
 #----------------------------------------------#
 

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.exceptions import global_exception_handler
 from app.core.logger import logger
+import app.db.base_import_class  # Đảm bảo tất cả model được import để tạo bảng
 
 app = FastAPI(
     title="Hệ thống quản lý tuyển dụng",

@@ -39,3 +39,7 @@ class ApplicationStatusEnum(str ,enum.Enum):
     interviewing = "interviewing"
     hired = "hired"
     rejected = "rejected"
+
+class SenderEnum(str , enum.Enum):
+    user = "user"
+    ai = "ai"
