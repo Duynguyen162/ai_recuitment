@@ -1,5 +1,5 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import APIKeyCookie
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 from app.db.database import get_db
@@ -9,30 +9,33 @@ from app.core.enum import StatusEnum
 from app.models.candidate_profiles import CandidateProfile
 from app.core.enum import RoleEnum
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
+cookie_scheme = APIKeyCookie(name="access_token", auto_error=False)
+
 # check token
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    credentials_exception = HTTPException(
-        status_code = status.HTTP_401_UNAUTHORIZED,
-        detail = "Không thể xác thực thông tin.)",
-        headers = {"WWW-Authenticate": "Bearer"},
-    )
+def get_current_user(request: Request, 
+                     token_str: str = Depends(cookie_scheme), db: 
+                     Session = Depends(get_db)) -> User:
     """
     Dependency dùng để kiểm tra token và lấy thông tin user hiện tại.
     """
+    # Swagger UI sẽ truyền token_str vào, hoặc lấy trực tiếp từ request
+    token_str = token_str or request.cookies.get("access_token")
+
+    if not token_str:
+        raise HTTPException(status_code=401, detail="Bạn chưa đăng nhập")
+    # Cắt bỏ chữ "Bearer "
+    token = token_str.split(" ")[1] if "Bearer" in token_str else token_str
+    
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub") #sub là user_id đã được mã hóa trong token
-        if user_id is None:
-            raise credentials_exception
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Người dùng không còn tồn tại")
+        return user
     except JWTError:
-        raise credentials_exception
+        raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc đã hết hạn")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise credentials_exception
-    
-    return user
 
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """

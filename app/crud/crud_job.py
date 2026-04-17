@@ -5,7 +5,6 @@ from app.models.job_posting import JobPosting
 from app.schemas.job_schema import JobPostingCreate
 from app.core.enum import JobStatusEnum
 from sqlalchemy import or_
-
 def get_list_job(db: Session, user_id: int):
     """
     danh sách các job đã đăng
@@ -86,6 +85,19 @@ def create_job_posting(db: Session, company_id: int, user_id: int, job_in: JobPo
         db.rollback()
         print(e)
         raise
+
+def get_proposed_jobs(db: Session ,offset: int = 0, limit: int = 20):
+    """Lấy danh sách các job mới nhất để hiển thị (có phân trang)"""
+    return (
+        db.query(JobPosting)
+        .filter(
+            JobPosting.status == JobStatusEnum.published,
+        )
+        .order_by(JobPosting.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
 def delete_job(db: Session , job_id: int):
     """ xóa job đã đăng """

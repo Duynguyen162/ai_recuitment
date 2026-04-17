@@ -7,6 +7,13 @@ class Settings(BaseSettings):
     ALGORITHM: str                          # dùng thuật toán nào để mã hóa token
     ACCESS_TOKEN_EXPIRE_MINUTES: int        # thời gian hết hạn của token
 
+    # CẤU HÌNH EMAIL
+    MAIL_USERNAME: str = ""
+    MAIL_PASSWORD: str = ""
+    MAIL_FROM: str = ""
+    MAIL_PORT: int = 465
+    MAIL_SERVER: str = "smtp.gmail.com"
+    
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

@@ -139,6 +139,25 @@ def create_job(
         meta=None
     )
 
+@router.get("/job_proposed", response_model=ResponseSchema[list[JobPostingResponse]])
+def get_proposed_jobs(
+    limit: int = Query(20, description="Số lượng mỗi trang"),
+    offset: int = Query(0, description="Bắt đầu từ bản ghi số mấy"),
+    db: Session = Depends(get_db),
+    # current_user: User = Depends(get_current_user)
+):
+    """Ứng viên xem danh sách các job mới đăng """
+
+    proposed_jobs = crud_job.get_proposed_jobs(db, limit=limit, offset=offset)
+    data = [JobPostingResponse.model_validate(job) for job in proposed_jobs]
+
+    return ResponseSchema(
+        success=True,
+        data=data,
+        error=None,
+        meta=None
+    )
+
 @router.delete("/delete_jobs")
 def deleted_job(
     job_id: int,
