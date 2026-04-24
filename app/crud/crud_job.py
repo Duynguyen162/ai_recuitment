@@ -1,10 +1,12 @@
 # app/crud/crud_job.py
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session ,joinedload
 from app.models.job_posting import JobPosting
 from app.schemas.job_schema import JobPostingCreate
 from app.core.enum import JobStatusEnum
-from sqlalchemy import or_
+from sqlalchemy import String, and_, column, or_, select
+from sqlalchemy import func
+
 def get_list_job(db: Session, user_id: int):
     """
     danh sách các job đã đăng
@@ -19,36 +21,74 @@ def get_public_jobs(
     db: Session,
     keyword: str | None = None,
     location: str | None = None,
+    job_type: str | None = None,
     tag: str | None = None,
+    candidate_exp: int | None = None,
     limit: int = 20,
-    offset: int = 0
+    offset: int = 0,
 ):
-    """API tìm kiếm các công việc đang public"""
-    query = db.query(JobPosting).filter(
-        JobPosting.status == JobStatusEnum.published
-    )
+    """tìm kiếm tin tuyển dụng công khai với nhiều tiêu chí khác nhau (có phân trang)"""
+    
+    query = db.query(JobPosting).filter(JobPosting.status == JobStatusEnum.published)
 
-    if keyword:
+    # HELPER: Escape pattern
+    def escape_pattern(s: str) -> str:
+        return s.replace('%', r'\%').replace('_', r'\_') if s else ""
+
+
+    if keyword and keyword.strip():
+        keywords = [w.strip() for w in keyword.split() if w.strip()]
+        conditions = []
+        
+        for word in keywords:
+            pattern = f"%{escape_pattern(word)}%"
+            
+            # Title, Description, Tags
+            title_cond = func.unaccent(JobPosting.title).ilike(
+                func.unaccent(pattern), escape='\\'
+            )
+            desc_cond = func.unaccent(JobPosting.description).ilike(
+                func.unaccent(pattern), escape='\\'
+            )
+            tag_cond = func.unaccent(
+                func.cast(JobPosting.tags, String)
+            ).ilike(func.unaccent(pattern), escape='\\')
+            
+            conditions.append(or_(title_cond, desc_cond, tag_cond))
+        
+        query = query.filter(and_(*conditions))
+
+    if tag and tag.strip() and not keyword:
+        pattern = f"%{escape_pattern(tag.strip())}%"
         query = query.filter(
-            or_(
-                JobPosting.title.ilike(f"%{keyword}%"),
-                JobPosting.description.ilike(f"%{keyword}%"),
-                JobPosting.requirements.ilike(f"%{keyword}%")
+            func.unaccent(func.cast(JobPosting.tags, String)).ilike(
+                func.unaccent(pattern), escape='\\'
             )
         )
 
-    if location:
-        query = query.filter(JobPosting.location.ilike(f"%{location}%"))
+    if candidate_exp is not None:
+        query = query.filter(JobPosting.years_of_experience <= candidate_exp)
 
-    if tag:
-        query = query.filter(JobPosting.tags.contains([tag]))
+    if job_type:
+        query = query.filter(JobPosting.job_type == job_type)
 
-    return (
+    if location and location.strip():
+        pattern = f"%{escape_pattern(location.strip())}%"
+        query = query.filter(
+            func.unaccent(JobPosting.location).ilike(
+                func.unaccent(pattern), escape='\\'
+            )
+        )
+        
+    total = query.count()
+    jobs = (
         query.order_by(JobPosting.created_at.desc())
-        .offset(offset)
-        .limit(limit)
+        .offset(max(0, offset))
+        .limit(min(limit, 100))
         .all()
     )
+
+    return jobs, total
 
 def update_job_status(db: Session, job_id: int, company_id: int, new_status: JobStatusEnum):
     """HR đổi trạng thái tin tuyển dụng """
@@ -88,16 +128,31 @@ def create_job_posting(db: Session, company_id: int, user_id: int, job_in: JobPo
 
 def get_proposed_jobs(db: Session ,offset: int = 0, limit: int = 20):
     """Lấy danh sách các job mới nhất để hiển thị (có phân trang)"""
-    return (
-        db.query(JobPosting)
-        .filter(
-            JobPosting.status == JobStatusEnum.published,
-        )
+    query = db.query(JobPosting).filter(JobPosting.status == JobStatusEnum.published)
+
+    total = query.count()
+
+    jobs = (
+        query
         .order_by(JobPosting.created_at.desc())
         .offset(offset)
         .limit(limit)
         .all()
     )
+
+    return jobs, total
+
+def get_job_by_id(db: Session, job_id: int):
+    """
+    Lấy thông tin chi tiết một Job kèm theo dữ liệu Company.
+    """
+    return (
+        db.query(JobPosting)
+        .options(joinedload(JobPosting.company)) # Join bảng Company ngay lập tức
+        .filter(JobPosting.id == job_id)
+        .first()
+    )
+
 
 def delete_job(db: Session , job_id: int):
     """ xóa job đã đăng """

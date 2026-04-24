@@ -6,7 +6,7 @@ from app.models.user import User
 from app.models.companies import CompanyMember, Company
 from app.api.deps import get_current_user
 from app.core.enum import RoleEnum, CompanyVerificationStatusEnum
-from app.schemas.job_schema import JobPostingCreate, JobPostingResponse, StatusUpdateRequest
+from app.schemas.job_schema import JobDetailResponse, JobPostingCreate, JobPostingResponse, StatusUpdateRequest
 from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_job
 
@@ -45,18 +45,21 @@ def search_public_jobs(
     keyword: str | None = Query(None,description="tìm theo tiêu đề "),
     location: str | None = Query(None, description="Tìm theo địa điểm"),
     tag: str | None = Query(None, description=" Tìm theo tag"  ),
-
+    job_type: str | None = Query(None, description="Tìm theo loại công việc"),
+    candidate_exp: int | None = Query(None, description="Tìm theo số năm kinh nghiệm của ứng viên"),
     limit: int = Query(10, description="Số job mỗi lần trả về"),
     offset: int = Query(0, description="Bỏ qua bao nhiêu job đầu"),
 
     db: Session = Depends(get_db)
 ):
     """API public: hiển thị danh sách việc làm cho ứng viên"""
-    jobs = crud_job.get_public_jobs(
+    jobs ,total = crud_job.get_public_jobs(
         db,
         keyword=keyword,
         location= location, 
         tag=tag ,
+        job_type=job_type,
+        candidate_exp=candidate_exp,
         limit=limit,
         offset=offset
         )
@@ -64,7 +67,11 @@ def search_public_jobs(
         success=True,
         data = jobs,
         error=None,
-        meta=None
+        meta={
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
         )
 
 @router.put("/{job_id}/status", response_model=ResponseSchema[JobPostingResponse])
@@ -148,14 +155,18 @@ def get_proposed_jobs(
 ):
     """Ứng viên xem danh sách các job mới đăng """
 
-    proposed_jobs = crud_job.get_proposed_jobs(db, limit=limit, offset=offset)
+    proposed_jobs, total = crud_job.get_proposed_jobs(db, limit=limit, offset=offset)
     data = [JobPostingResponse.model_validate(job) for job in proposed_jobs]
 
     return ResponseSchema(
         success=True,
         data=data,
         error=None,
-        meta=None
+        meta={
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
     )
 
 @router.delete("/delete_jobs")
@@ -170,4 +181,22 @@ def deleted_job(
         data=job_id,
         error=None,
         meta=None
+    )
+
+@router.get("/job_detail/{job_id}", response_model=ResponseSchema[JobDetailResponse])
+def get_job_detail(job_id: int, db: Session = Depends(get_db)):
+    """
+    Lấy thông tin chi tiết của một tin tuyển dụng cho ứng viên.
+    """
+    job = crud_job.get_job_by_id(db, job_id=job_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy thông tin công việc")
+    
+    # model_validate sẽ tự động map các quan hệ (relationship) nhờ cấu trúc Schema
+    data = JobDetailResponse.model_validate(job)
+
+    return ResponseSchema(
+        success=True,
+        data=data
     )

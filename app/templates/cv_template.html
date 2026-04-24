@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <title>CV_{{ full_name }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --text-color: #333;
+            --bg-gray: #f4f6f8;
+            --sidebar-width: 280px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+
+
+        @page {
+            size: A4;
+            margin: 0;
+            /* Xóa margin mặc định của trang in để màu sidebar tràn viền */
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            color: var(--text-color);
+            font-size: 14px;
+            line-height: 1.5;
+            background: #fff;
+        }
+
+        /* Chuyển sang Flexbox để WeasyPrint xuất PDF chuẩn xác nhất */
+        .cv-container {
+            width: 210mm;
+            min-height: 297mm;
+            display: flex;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--primary-color) !important;
+            color: #fff;
+            padding: 30px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+            flex-shrink: 0;
+            /* Chống co rút sidebar */
+        }
+
+        .sidebar h2 {
+            font-size: 18px;
+            text-transform: uppercase;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+
+        .contact-info div {
+            margin-bottom: 12px;
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            font-size: 13px;
+        }
+
+        .contact-info i {
+            width: 15px;
+            color: var(--accent-color);
+        }
+
+        .skill-group {
+            margin-bottom: 15px;
+        }
+
+        .skill-group h3 {
+            font-size: 14px;
+            color: var(--accent-color);
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .skill-list {
+            list-style: none;
+        }
+
+        .skill-list li {
+            margin-bottom: 5px;
+            font-size: 13px;
+            position: relative;
+            padding-left: 15px;
+        }
+
+        .skill-list li::before {
+            content: "•";
+            color: var(--accent-color);
+            position: absolute;
+            left: 0;
+            font-weight: bold;
+        }
+
+        /* --- MAIN CONTENT --- */
+        .main-content {
+            flex-grow: 1;
+            padding: 40px 30px;
+            background: #fff;
+        }
+
+        .header-name h1 {
+            font-size: 32px;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .header-name h2 {
+            font-size: 18px;
+            color: var(--accent-color);
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+
+        .section {
+            margin-bottom: 25px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            color: var(--primary-color);
+            border-bottom: 2px solid #eee;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .goal-text {
+            text-align: justify;
+            font-size: 14px;
+            white-space: pre-wrap;
+        }
+
+        .project-item {
+            margin-bottom: 20px;
+        }
+
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 5px;
+        }
+
+        .project-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .project-role {
+            font-style: italic;
+            color: #666;
+            font-size: 13px;
+        }
+
+        .project-desc {
+            margin-top: 8px;
+        }
+
+        .project-desc ul {
+            list-style: none;
+            padding-left: 5px;
+        }
+
+        .project-desc li {
+            position: relative;
+            padding-left: 15px;
+            margin-bottom: 5px;
+            text-align: justify;
+        }
+
+        .project-desc li::before {
+            content: "-";
+            position: absolute;
+            left: 0;
+            color: var(--primary-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="cv-container">
+        <aside class="sidebar">
+            <div class="contact">
+                <h2>Liên hệ</h2>
+                <div class="contact-info">
+                    {% if email %}
+                    <div><i class="fas fa-envelope"></i> <span style="word-break: break-all;">{{ email }}</span></div>
+                    {% endif %}
+
+                    {% if phone %}
+                    <div><i class="fas fa-phone"></i> <span>{{ phone }}</span></div>
+                    {% endif %}
+
+                    {% if links.github %}
+                    <div><i class="fab fa-github"></i> <span style="word-break: break-all;">{{ links.github }}</span>
+                    </div>
+                    {% endif %}
+
+                    {% if links.linkedin %}
+                    <div><i class="fab fa-linkedin"></i> <span style="word-break: break-all;">{{ links.linkedin
+                            }}</span></div>
+                    {% endif %}
+
+                    {% if links.portfolio %}
+                    <div><i class="fas fa-globe"></i> <span style="word-break: break-all;">{{ links.portfolio }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if educations %}
+            <div class="education">
+                <h2>Học vấn</h2>
+                {% for edu in educations %}
+                <div class="skill-group">
+                    <h3 style="color: #fff; font-weight: 700;">{{ edu.institution_name }}</h3>
+                    <p style="font-size: 13px; margin-top: 5px;">{{ edu.major }} {% if edu.degree %}({{ edu.degree }}){%
+                        endif %}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if skill_tags %}
+            <div class="skills">
+                <h2>Kỹ năng</h2>
+                <div class="skill-group">
+                    <ul class="skill-list">
+                        {% for skill in skill_tags %}
+                        <li>{{ skill }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if certifications %}
+            <div class="certifications">
+                <h2>Chứng chỉ</h2>
+                {% for cert in certifications %}
+                <div class="skill-group">
+                    <h3 style="color: #fff; font-weight: 700; font-size: 13px;">{{ cert.name }}</h3>
+                    {% if cert.issuer %}
+                    <p style="font-size: 12px; margin-top: 3px; color: #a1c4fd;">Cấp bởi: {{ cert.issuer }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </aside>
+
+        <main class="main-content">
+            <header class="header-name">
+                <h1>{{ full_name }}</h1>
+                <h2>{% if experiences %}{{ experiences[0].job_title }}{% else %}Ứng viên{% endif %}</h2>
+            </header>
+
+            {% if bio %}
+            <section class="section">
+                <h3 class="section-title">Giới thiệu bản thân</h3>
+                <p class="goal-text">{{ bio }}</p>
+            </section>
+            {% endif %}
+
+            {% if experiences %}
+            <section class="section">
+                <h3 class="section-title">Kinh nghiệm làm việc</h3>
+
+                {% for exp in experiences %}
+                <div class="project-item">
+                    <div class="project-header">
+                        <span class="project-name">{{ exp.company_name }}</span>
+                        <span class="project-role">{{ exp.job_title }}</span>
+                    </div>
+
+                    {% if exp.description %}
+                    <div class="project-desc">
+                        <ul>
+                            {% for line in exp.description.split('\n') %}
+                            {% if line.strip() %}
+                            <li>{{ line.strip().lstrip('-').strip() }}</li>
+                            {% endif %}
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </section>
+            {% endif %}
+        </main>
+    </div>
+</body>
+
+</html>

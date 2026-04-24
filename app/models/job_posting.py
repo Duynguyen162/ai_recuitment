@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BIGINT, Text, ForeignKey, Enum, DateTime
+from sqlalchemy import Column, Integer, String, BIGINT, Text, ForeignKey, Enum, DateTime
 from sqlalchemy.dialects.postgresql import JSONB 
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -22,6 +22,7 @@ class JobPosting(Base):
     
     salary_min = Column(BIGINT, nullable=True)
     salary_max = Column(BIGINT, nullable=True)
+    years_of_experience = Column(Integer, nullable=False, default=0)
     
     job_type = Column(Enum(JobTypeEnum), nullable=False)
     status = Column(Enum(JobStatusEnum), default=JobStatusEnum.draft, nullable=False)

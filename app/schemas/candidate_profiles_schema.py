@@ -13,7 +13,7 @@ class CandidateProfileUpdate(BaseModel):
     portfolio_url: str | None = None
     linkedin_url: str | None = None
     github_url: str | None = None
-    skills_tags: Optional[List[str]] = []
+    skill_tags: Optional[List[str]] = Field(default_factory=list)
     years_of_experience: Optional[int] = None
 
 class CandidateProfileResponse(BaseModel):
@@ -26,7 +26,7 @@ class CandidateProfileResponse(BaseModel):
     portfolio_url: str | None = None
     linkedin_url: str | None = None
     github_url: str | None = None
-    skills_tags: Optional[List[str]] = []
+    skill_tags: Optional[List[str]] = []
     years_of_experience: Optional[int] = None
     
     experiences: List[CandidateExperienceResponse] = []
