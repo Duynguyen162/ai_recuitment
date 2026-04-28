@@ -56,6 +56,8 @@ class JobDetailResponse(BaseModel):
     created_at: datetime
     expired_at: datetime
     company: CompanyShortResponse
+    has_applied: bool | None = None
+    is_save:bool | None = None
 
     class Config:
         from_attributes = True

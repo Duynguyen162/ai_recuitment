@@ -35,3 +35,4 @@ class JobPosting(Base):
     creator = relationship("User", backref="created_jobs")
     applications = relationship("Application",back_populates="job_posting",cascade="all, delete-orphan")
     chat_sessions = relationship("ChatSession", back_populates="job", cascade="all, delete-orphan")
+    saved_jobs = relationship("SaveJob", back_populates="job_posting")

@@ -45,5 +45,5 @@ class CVUpload(Base):
     file_name = Column(String(255), nullable=False) # tên file CV gốc
 
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now()) # ngày tải lên CV
-
+    applications = relationship("Application", back_populates="cv_uploads")
     candidate = relationship("CandidateProfile", back_populates="cv_uploads")

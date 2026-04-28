@@ -5,13 +5,18 @@ from app.core.enum import ApplicationStatusEnum
 
 class ApplicationCreate(BaseModel):
     job_id: int
+    cv_type:str
+    cv_id:int | None = None
 
 class ApplicationResponse(BaseModel):
-    id: int 
+    id: int
     job_id: int
-    candidate_id: int
-    status: ApplicationStatusEnum
+    job_title: str 
+    company_name: str
+    status: str
     applied_at: datetime
-
+    cv_type: str
+    cv_id: int | None = None
+    cv_name:str 
     class Config:
         from_attributes = True

@@ -1,4 +1,6 @@
+import asyncio
 import os
+import sys
 from fastapi import APIRouter, File, HTTPException
 from sqlalchemy.orm import Session
 from app.core.enum import RoleEnum
@@ -235,6 +237,7 @@ def delete_certification(certification_id: int,
 def get_list_cv(db: Session = Depends(get_db),
                        current_user: User = Depends(get_current_user),
                        profile: CandidateProfile = Depends(get_current_candidate_profile)):
+    """lấy danh sách các cv """
     url_cv = get_candidate_cv(db,profile)
     return ResponseSchema(
         success=True,
@@ -265,18 +268,33 @@ def view_cv_file(
     )
 
 async def generate_pdf_from_html(html: str):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        page = await browser.new_page()
-        await page.set_content(html)
-        pdf = await page.pdf(
-            format="A4",
-            print_background=True,  
-            margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
-            display_header_footer=False
-        )
-        await browser.close()
-        return pdf
+    """Convert HTML to PDF using Playwright"""
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+    browser = None
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            
+            # ✅ Set viewport để layout đúng
+            await page.set_viewport_size({"width": 1200, "height": 1600})
+            
+            await page.set_content(html, wait_until="networkidle")
+            
+            pdf = await page.pdf(
+                format="A4",
+                print_background=True,  
+                margin={"top": "10mm", "right": "10mm", "bottom": "10mm", "left": "10mm"},
+                display_header_footer=False
+            )
+            await browser.close()
+            return pdf
+    except Exception as e:
+        if browser:
+            await browser.close()
+        raise HTTPException(status_code=500, detail=f"Lỗi tạo PDF: {str(e)}")
 
 
 @router.get("/export_cv")
@@ -285,26 +303,27 @@ async def export_cv_pdf(
     current_user: User = Depends(get_current_user),
     profile: CandidateProfile = Depends(get_current_candidate_profile)
 ):
-    profile = get_full_candidate_cv(db, profile.id)
+    """ api export ra cv theo fomat của hệ thống"""
+    full_profile = get_full_candidate_cv(db, profile.id)
     
-    if not profile:
+    if not full_profile:
         raise HTTPException(status_code=404, detail="Không tìm thấy CV")
 
     context = {
-        "full_name": profile.full_name,
-        "phone": profile.phone,
+        "full_name": full_profile.full_name or "Unknown",
+        "phone": full_profile.phone or "",
         "email": current_user.email,
-        "bio": profile.bio,
-        "avatar_url": profile.avatar_url,
+        "bio": full_profile.bio or "",
+        "avatar_url": full_profile.avatar_url,
 
         "links": {
-            "github": profile.github_url,
-            "linkedin": profile.linkedin_url,
-            "portfolio": profile.portfolio_url,
+            "github": full_profile.github_url or "",
+            "linkedin": full_profile.linkedin_url or "",
+            "portfolio": full_profile.portfolio_url or "",
         },
 
-        "skill_tags": profile.skill_tags or [],
-        "years_of_experience": profile.years_of_experience,
+        "skill_tags": full_profile.skill_tags or [],
+        "years_of_experience": full_profile.years_of_experience or 0,
 
         "experiences": [
             {
@@ -312,7 +331,7 @@ async def export_cv_pdf(
                 "job_title": exp.job_title, 
                 "description": exp.description,
             }
-            for exp in profile.experiences
+            for exp in (full_profile.experiences or [])
         ],
 
         "educations": [
@@ -321,7 +340,7 @@ async def export_cv_pdf(
                 "major": edu.major,
                 "degree": edu.degree,
             }
-            for edu in profile.educations
+            for edu in (full_profile.educations or [])
         ],
 
         "certifications": [
@@ -329,28 +348,31 @@ async def export_cv_pdf(
                 "name": cert.name,
                 "issuer": cert.issuer,
             }
-            for cert in profile.certifications
+            for cert in (full_profile.certifications or [])
         ],
     }
 
-    # 2. Render HTML
-    env = Environment(loader=FileSystemLoader("app/templates"))
-    template = env.get_template("cv_template.html")
-    html_out = template.render(context)
+    try:
+        # Render HTML
+        env = Environment(loader=FileSystemLoader("app/templates"))
+        template = env.get_template("cv_template.html")
+        html_out = template.render(context)
 
-    # 3. Convert HTML → PDF
-    pdf_bytes = await generate_pdf_from_html(html_out)
-    
-    filename = f"CV_{profile.full_name}.pdf"
-    safe_filename = quote(filename)
-    # 4. Return file
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}"
-        }
-    )
+        # Convert to PDF
+        pdf_bytes = await generate_pdf_from_html(html_out)
+        
+        filename = f"CV_{full_profile.full_name}.pdf"
+        safe_filename = quote(filename, safe='')
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename*=UTF-8\'\'{safe_filename}'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xuất CV: {str(e)}")
 
 @router.post("/cv_upload", response_model = ResponseSchema[CVUploadResponse])
 def create_cv_upload(file: UploadFile = File(...),

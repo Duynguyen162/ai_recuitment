@@ -36,6 +36,30 @@ def get_current_user(
         )
     return user
 
+http_bearer_optional = HTTPBearer(auto_error=False)
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(http_bearer_optional),
+    db: Session = Depends(get_db)
+) -> User | None:
+
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        user_id = int(payload.get("sub"))
+    except:
+        return None
+
+    user = db.query(User).filter(User.id == user_id).first()
+    return user
+
 def get_current_active_user(
     user: User = Depends(get_current_user)
 ) -> User:

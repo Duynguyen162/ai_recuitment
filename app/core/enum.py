@@ -35,7 +35,8 @@ class JobStatusEnum(str, enum.Enum):
     closed = "closed" 
 
 class ApplicationStatusEnum(str ,enum.Enum):
-    applied = "applied"
+    pending = "pending"
+    review = "review"
     interviewing = "interviewing"
     hired = "hired"
     rejected = "rejected"

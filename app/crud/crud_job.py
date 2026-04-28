@@ -1,6 +1,9 @@
 # app/crud/crud_job.py
 from fastapi import HTTPException
 from sqlalchemy.orm import Session ,joinedload
+from app.models.saved_jobs import SaveJob
+from app.models.applications import Application
+from app.models.candidate_profiles import CandidateProfile
 from app.models.job_posting import JobPosting
 from app.schemas.job_schema import JobPostingCreate
 from app.core.enum import JobStatusEnum
@@ -142,16 +145,36 @@ def get_proposed_jobs(db: Session ,offset: int = 0, limit: int = 20):
 
     return jobs, total
 
-def get_job_by_id(db: Session, job_id: int):
-    """
-    Lấy thông tin chi tiết một Job kèm theo dữ liệu Company.
-    """
-    return (
+def is_save(db:Session , job_id:int, user_id:int):
+    """kiểm tra xem job đã được user lưu chưa"""
+    job = db.query(SaveJob).join(CandidateProfile).filter(
+        SaveJob.job_id == job_id,
+        CandidateProfile.user_id == user_id 
+    ).first()
+    if job:
+        return True
+    return False
+
+def get_job_by_id(db: Session, job_id: int, user_id: int | None ):
+    """lấy thông tin chi tiết của 1 job"""
+    job = (
         db.query(JobPosting)
-        .options(joinedload(JobPosting.company)) # Join bảng Company ngay lập tức
+        .options(joinedload(JobPosting.company))
         .filter(JobPosting.id == job_id)
         .first()
     )
+
+    if not job:
+        return None
+    
+    applied = False
+    save = False
+    
+    if user_id:
+        applied = has_applied(db, user_id, job_id)
+        save = is_save(db,job_id,user_id)
+
+    return job, applied ,save
 
 
 def delete_job(db: Session , job_id: int):
@@ -164,4 +187,69 @@ def delete_job(db: Session , job_id: int):
     db.delete(job)
     db.commit()
     return None
-        
+
+def has_applied(db: Session, user_id: int, job_id: int):
+    profile = db.query(CandidateProfile).filter(
+        CandidateProfile.user_id == user_id
+    ).first()
+
+    if not profile:
+        return False
+
+    application = db.query(Application).filter(
+        Application.candidate_id == profile.id,
+        Application.job_id == job_id
+    ).first()
+
+    return application is not None
+
+
+def list_save_job(db: Session, user_id: int):
+    result = db.query(JobPosting).join(SaveJob).join(CandidateProfile).filter(
+        CandidateProfile.user_id == user_id
+    ).all()
+
+    return result
+
+
+def save_job(db: Session, job_id: int, user_id: int):
+    """lưu lại job yêu thích hoặc đang chú ý"""
+    candidate = db.query(CandidateProfile).filter(
+        CandidateProfile.user_id == user_id
+    ).first()
+
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Chưa có profile")
+
+    # check đã lưu chưa
+    existing = db.query(SaveJob).filter(
+        SaveJob.candidate_id == candidate.id,
+        SaveJob.job_id == job_id
+    ).first()
+    job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
+
+    if existing:
+        raise HTTPException(status_code=400, detail="Job đã được lưu trước đó")
+
+    try:
+        save = SaveJob(
+            candidate_id=candidate.id, 
+            job_id=job_id
+        )
+        db.add(save)
+        db.commit()
+        db.refresh(save)
+        return save,job
+
+    except Exception as e:
+        db.rollback()
+        raise e
+    
+def delete_saved_job(db:Session , user_id:int, job_id:int):
+    save_job = db.query(SaveJob).join(CandidateProfile).filter(
+        CandidateProfile.user_id == user_id,
+        SaveJob.job_id == job_id
+    ).first()
+    db.delete(save_job)
+    db.commit()
+    return None

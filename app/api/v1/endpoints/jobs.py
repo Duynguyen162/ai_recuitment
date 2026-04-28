@@ -1,14 +1,16 @@
 # app/api/v1/endpoints/jobs.py
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.user import User
 from app.models.companies import CompanyMember, Company
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_optional
 from app.core.enum import RoleEnum, CompanyVerificationStatusEnum
 from app.schemas.job_schema import JobDetailResponse, JobPostingCreate, JobPostingResponse, StatusUpdateRequest
 from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_job
+from app.schemas.save_job_schema import SaveJobResponse
 
 router = APIRouter()
 
@@ -184,19 +186,73 @@ def deleted_job(
     )
 
 @router.get("/job_detail/{job_id}", response_model=ResponseSchema[JobDetailResponse])
-def get_job_detail(job_id: int, db: Session = Depends(get_db)):
-    """
-    Lấy thông tin chi tiết của một tin tuyển dụng cho ứng viên.
-    """
-    job = crud_job.get_job_by_id(db, job_id=job_id)
-    
-    if not job:
+def get_job_detail(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional), 
+):
+    user_id = current_user.id if current_user else None
+
+    job_data = crud_job.get_job_by_id(db, job_id=job_id, user_id=user_id)
+
+    if not job_data:
         raise HTTPException(status_code=404, detail="Không tìm thấy thông tin công việc")
-    
-    # model_validate sẽ tự động map các quan hệ (relationship) nhờ cấu trúc Schema
+
+    job, has_applied_flag ,save = job_data
     data = JobDetailResponse.model_validate(job)
+
+    if current_user:
+        data.has_applied = has_applied_flag
+        data.is_save = save
+
+    return ResponseSchema(success=True, data=data)
+
+@router.get("/save_job", response_model=ResponseSchema[List[JobDetailResponse]])
+def get_list_save_job(
+    db:Session =Depends(get_db),
+    current_user:User = Depends(get_current_user)
+):
+    if current_user.role != RoleEnum.candidate:
+        raise HTTPException(status_code=403, detail="Chỉ ứng viên mới có chức năng này")
+    data = crud_job.list_save_job(db,current_user.id)
 
     return ResponseSchema(
         success=True,
-        data=data
+        data=data,
+        error=None,
+        meta=None
+    )
+
+@router.post("/save_job/{job_id}", response_model=ResponseSchema[SaveJobResponse])
+def save_job_favourite(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != RoleEnum.candidate:
+        raise HTTPException(status_code=403, detail="Chỉ ứng viên mới lưu được job.")
+
+    save ,job = crud_job.save_job(db, job_id, current_user.id)
+
+    data = SaveJobResponse.model_validate(save)
+
+    return ResponseSchema(
+        success=True,
+        data=data,  
+        error=None,
+        meta=None
+    )
+
+@router.delete("/delete_saved_job")
+def deleted_saved_job(
+    job_id:int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+): 
+    crud_job.delete_saved_job(db , current_user.id,job_id)
+    return ResponseSchema(
+        success=True,
+        data=job_id,
+        error=None,
+        meta=None
     )
