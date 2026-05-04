@@ -7,7 +7,7 @@ from app.models.user import User
 from app.models.companies import CompanyMember, Company
 from app.api.deps import get_current_user, get_current_user_optional
 from app.core.enum import RoleEnum, CompanyVerificationStatusEnum
-from app.schemas.job_schema import JobDetailResponse, JobPostingCreate, JobPostingResponse, StatusUpdateRequest
+from app.schemas.job_schema import JobDetailResponse, JobPostingCreate, JobPostingResponse, JobPostingUpdate, StatusUpdateRequest
 from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_job
 from app.schemas.save_job_schema import SaveJobResponse
@@ -20,26 +20,37 @@ class UpdateJobStatusEnum(str, enum.Enum):
     paused = "paused"        # Tạm dừng tin
     closed = "closed"        # Đóng hẳn tin
 
-@router.get("/get_jobs_create_by_hr",response_model=ResponseSchema[list[JobPostingResponse]])
+@router.get("/get_jobs_create_by_hr", response_model=ResponseSchema[list[JobPostingResponse]])
 def get_job_posting(
-    db:Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
 ):
-    """lấy danh sách job đã đăng"""
     if current_user.role != RoleEnum.hr_manager:
-        raise HTTPException(status_code=404 , detail="chỉ có hr mới dùng được api này")
-    
-    list_job = crud_job.get_list_job(db , current_user.id )
-    data = []
-    for job in list_job:
-        job_response = JobPostingResponse.model_validate(job)
-        data.append(job_response)
+        raise HTTPException(status_code=403, detail="chỉ có hr mới dùng được api này")
+
+    offset = (page - 1) * page_size
+
+    jobs, total = crud_job.get_list_job(
+        db,
+        current_user.id,
+        limit=page_size,
+        offset=offset
+    )
+
+    data = [JobPostingResponse.model_validate(job) for job in jobs]
 
     return ResponseSchema(
         success=True,
-        data = data,
+        data=data,
         error=None,
-        meta=None
+        meta={
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) 
+        }
     )
 
 @router.get("/search_jobs",response_model=ResponseSchema[list[JobPostingResponse]])
@@ -148,6 +159,28 @@ def create_job(
         meta=None
     )
 
+@router.put("/update_job/{job_id}",response_model=ResponseSchema[JobPostingResponse])
+def update_job(
+    job_id: int,
+    job_update: JobPostingUpdate,
+    db:Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(status_code=404 , detail="Chỉ hr mới có chức năng này")
+    
+    if job_update.status != "draft":
+        raise HTTPException(status_code=404 ,detail="chỉ bản nháp mới có thể chỉnh sửa")
+        
+    job_update = crud_job.update_job_crud(db, job_id , job_update , current_user.id)
+
+    return ResponseSchema(
+        success=True,
+        data=JobPostingResponse.model_validate(job_update),
+        error=None,
+        meta=None
+    )
+
 @router.get("/job_proposed", response_model=ResponseSchema[list[JobPostingResponse]])
 def get_proposed_jobs(
     limit: int = Query(20, description="Số lượng mỗi trang"),
@@ -177,6 +210,9 @@ def deleted_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ): 
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(status_code=404,detail="chỉ Hr mới có chức năng này")
+    
     crud_job.delete_job(db , job_id)
     return ResponseSchema(
         success=True,

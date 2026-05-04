@@ -1,24 +1,41 @@
 # app/crud/crud_job.py
 from fastapi import HTTPException
 from sqlalchemy.orm import Session ,joinedload
+from app.models.companies import CompanyMember
 from app.models.saved_jobs import SaveJob
 from app.models.applications import Application
 from app.models.candidate_profiles import CandidateProfile
 from app.models.job_posting import JobPosting
-from app.schemas.job_schema import JobPostingCreate
+from app.schemas.job_schema import JobPostingCreate, JobPostingUpdate
 from app.core.enum import JobStatusEnum
 from sqlalchemy import String, and_, column, or_, select
 from sqlalchemy import func
 
-def get_list_job(db: Session, user_id: int):
+def get_list_job(
+    db: Session,
+    user_id: int,
+    limit: int = 5,
+    offset: int = 0,
+):
     """
-    danh sách các job đã đăng
+    danh sách các job đã đăng (có phân trang)
     """
-    data = db.query(JobPosting).filter(JobPosting.created_by == user_id).all()
 
-    if not data:
-        raise HTTPException(status_code=404, detail="chưa đăng bài tuyển dụng nào")
-    return data
+    query = db.query(JobPosting).filter(
+        JobPosting.created_by == user_id
+    )
+
+    total = query.count()
+
+    jobs = (
+        query
+        .order_by(JobPosting.created_at.desc())
+        .offset(max(0, offset))
+        .limit(min(limit, 100))
+        .all()
+    )
+
+    return jobs, total
 
 def get_public_jobs(
     db: Session,
@@ -118,7 +135,6 @@ def create_job_posting(db: Session, company_id: int, user_id: int, job_in: JobPo
             **data,
             company_id=company_id,
             created_by=user_id,
-            status=JobStatusEnum.published
         )
         db.add(db_job)
         db.commit()
@@ -128,6 +144,25 @@ def create_job_posting(db: Session, company_id: int, user_id: int, job_in: JobPo
         db.rollback()
         print(e)
         raise
+
+def update_job_crud(db:Session, job_id:int ,job: JobPostingUpdate ,user_id: int ):
+    """Cập nhật trang thái job"""
+    company_member = db.query(CompanyMember).filter(CompanyMember.user_id == user_id ).first()
+    if company_member:
+        job_db = db.query(JobPosting).filter(
+            JobPosting.id == job_id,
+            JobPosting.company_id == company_member.company_id
+        ).first()
+    
+    if job_db:
+        update_data = job.model_dump(exclude_unset=True)
+
+        for key, value in update_data.items():
+            setattr(job_db, key, value)
+        db.commit()
+        db.refresh(job_db)
+    return job_db
+
 
 def get_proposed_jobs(db: Session ,offset: int = 0, limit: int = 20):
     """Lấy danh sách các job mới nhất để hiển thị (có phân trang)"""

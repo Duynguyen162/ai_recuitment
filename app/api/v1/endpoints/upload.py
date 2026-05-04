@@ -15,6 +15,8 @@ class UploadFolderEnum(str, Enum):
     avatars = "avatars"
     documents = "documents"
 
+BASE_URL = "http://localhost:8000"  
+
 @router.post("/file", response_model=ResponseSchema[str])
 async def upload_general_file(
     folder: UploadFolderEnum,
@@ -33,6 +35,7 @@ async def upload_general_file(
     
     unique_filename = f"{uuid.uuid4()}{ext}"
     file_path = os.path.join(target_dir, unique_filename)
+    file_url = f"{BASE_URL}/{file_path.replace(os.sep, '/')}"
     
     # 3. Lưu file
     try:
@@ -42,4 +45,4 @@ async def upload_general_file(
         raise HTTPException(status_code=500, detail="Không thể lưu file")
 
     # Trả về đường dẫn để Frontend dùng cho API tiếp theo
-    return ResponseSchema(success=True, data=file_path)
+    return ResponseSchema(success=True, data=file_url)

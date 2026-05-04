@@ -12,6 +12,10 @@ from app.api.v1.router import api_router
 from app.core.exceptions import global_exception_handler
 from app.core.logger import logger
 import app.db.base_import_class
+from fastapi.staticfiles import StaticFiles
+
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI(
     title="Hệ thống quản lý tuyển dụng",
@@ -35,6 +39,7 @@ app.add_exception_handler(Exception, global_exception_handler)
  
 # Then include routers
 app.include_router(api_router, prefix="/api/v1")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
  
 @app.get("/")
 def read_root():

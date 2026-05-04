@@ -44,3 +44,13 @@ class ApplicationStatusEnum(str ,enum.Enum):
 class SenderEnum(str , enum.Enum):
     user = "user"
     ai = "ai"
+
+class VipEnum(str ,enum.Enum):
+    processing = "processing"
+    ready = "ready"
+    failed = "failed"
+
+class DocumentStatus(str, enum.Enum):
+    processing = "processing"
+    ready = "ready"
+    failed = "failed"

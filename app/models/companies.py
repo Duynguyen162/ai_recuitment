@@ -1,9 +1,9 @@
 import enum
 from app.models.user import User
-from sqlalchemy import BIGINT, Column, Integer, String, DateTime ,Enum,ForeignKey, Text
+from sqlalchemy import BIGINT, Boolean, Column, Integer, String, DateTime ,Enum,ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.core.enum import VerificationLogStatusEnum ,CompanyVerificationStatusEnum
+from app.core.enum import DocumentStatus, VerificationLogStatusEnum ,CompanyVerificationStatusEnum
 from app.db.base import Base
 
 class Company(Base):
@@ -15,7 +15,8 @@ class Company(Base):
     description = Column(String, nullable=True)
     size = Column(String, nullable=True)
     website = Column(String, nullable=True)
-    verification_status = Column(Enum(CompanyVerificationStatusEnum), default=CompanyVerificationStatusEnum.pending, nullable=False)
+    verification_status = Column(Enum(CompanyVerificationStatusEnum), default=CompanyVerificationStatusEnum.pending, nullable=True)
+    is_vip = Column(Boolean,nullable=False,server_default="false")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     verifications = relationship(
@@ -70,9 +71,10 @@ class CompanyDocument(Base):
     id = Column(BIGINT, primary_key=True, index=True, autoincrement=True)
     company_id = Column(BIGINT, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     upload_by_id = Column(BIGINT, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    status = Column(Enum(DocumentStatus), nullable=False, default=DocumentStatus.processing)
     
     file_url = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True),server_default=func.now(), onupdate=func.now(), nullable=False)
 
     company = relationship("Company", back_populates="documents")
