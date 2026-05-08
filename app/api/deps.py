@@ -1,67 +1,101 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import HTTPAuthorizationCredentials,HTTPBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.config import settings
 from app.models.user import User
-from app.core.enum import StatusEnum
+from app.core.enum import StatusEnum, RoleEnum
 from app.models.candidate_profiles import CandidateProfile
-from app.core.enum import RoleEnum
+from app.core.config import settings
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
-# check token
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    credentials_exception = HTTPException(
-        status_code = status.HTTP_401_UNAUTHORIZED,
-        detail = "Không thể xác thực thông tin.)",
-        headers = {"WWW-Authenticate": "Bearer"},
-    )
-    """
-    Dependency dùng để kiểm tra token và lấy thông tin user hiện tại.
-    """
+http_bearer = HTTPBearer()
+
+def get_current_user(
+        credentials: HTTPAuthorizationCredentials = Depends(http_bearer),
+        db: Session = Depends(get_db)) -> User:
+    token = credentials.credentials
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub") #sub là user_id đã được mã hóa trong token
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        user_id = int(payload.get("sub"))
+    except:
+        raise HTTPException(401, "Token không hợp lệ")
 
     user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise credentials_exception
-    
+    if not user:
+        raise HTTPException(401, "User không tồn tại")
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy người dùng"
+        )
     return user
 
-def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
-    """
-    Dependency dùng để kiểm tra trạng thái của user hiện tại. 
-    Chỉ cho phép user có trạng thái active truy cập.
-    
-    """
-    if current_user.status != StatusEnum.active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tài khoản của bạn đã bị khóa.",
-        )
-    return current_user
+http_bearer_optional = HTTPBearer(auto_error=False)
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(http_bearer_optional),
+    db: Session = Depends(get_db)
+) -> User | None:
 
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        user_id = int(payload.get("sub"))
+    except:
+        return None
+
+    user = db.query(User).filter(User.id == user_id).first()
+    return user
+
+def get_current_active_user(
+    user: User = Depends(get_current_user)
+) -> User:
+    """
+     Kiểm tra user status = active
+    """
+    if user.status != StatusEnum.active:
+        raise HTTPException(403, "User bị khóa")
+    return user
 
 def get_current_candidate_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> CandidateProfile:
     """
-    Dependency dùng chung cho mọi API của Ứng viên.
-    Tự động kiểm tra quyền và trả về profile gốc.
+    Dependency cho candidate-only endpoints
     """
+    # Kiểm tra role
     if current_user.role != RoleEnum.candidate:
-        raise HTTPException(status_code=403, detail="Chỉ ứng viên mới được dùng tính năng này")
-        
-    profile = db.query(CandidateProfile).filter(CandidateProfile.user_id == current_user.id).first()
+        print(f"User role: {current_user.role}, expected: candidate")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ ứng viên mới được dùng tính năng này"
+        )
+    
+    # Lấy profile
+    profile = db.query(CandidateProfile).filter(
+        CandidateProfile.user_id == current_user.id
+    ).first()
     
     if not profile:
-        raise HTTPException(status_code=400, detail="Vui lòng cập nhật thông tin cá nhân (Profile) trước")
-        
+        print(f"Candidate profile not found for user: {current_user.id}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Vui lòng cập nhật thông tin cá nhân (Profile) trước"
+        )
+    
+    print(f"Candidate profile found: {profile.id}")
     return profile

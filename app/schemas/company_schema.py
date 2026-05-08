@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from app.core.enum import CompanyVerificationStatusEnum, VerificationLogStatusEnum
+from app.core.enum import CompanyVerificationStatusEnum, DocumentStatus, VerificationLogStatusEnum, VipEnum
 
 # BẢNG COMPANIES
 class CompanyBase(BaseModel):
@@ -9,6 +9,7 @@ class CompanyBase(BaseModel):
     size: str | None = None
     website: str | None = None
     description: str | None = None
+    is_vip: bool
 
 class CompanyCreate(CompanyBase):
     pass
@@ -73,7 +74,7 @@ class CompanyDocumentResponse(BaseModel):
     file_url: str
     created_at: datetime
     updated_at: datetime
-
+    status: DocumentStatus
     class Config:
         from_attributes = True
         

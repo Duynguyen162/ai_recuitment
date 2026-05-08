@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session,joinedload
 from app.models.candidate_details import CandidateExperience, CandidateEducation, CandidateCertification, CVUpload
 from fastapi import HTTPException
 
@@ -122,15 +122,26 @@ def delete_candidate_certification(db: Session, certification_id: int , current_
 ##################################
 import os
 import shutil
-from fastapi import UploadFile, File
+from fastapi import UploadFile
 UPLOAD_DIR = "uploads/cvs"
 os.makedirs(UPLOAD_DIR, exist_ok=True) 
 
-def get_candidate_cv(db: Session, profile: CVUpload):
+def get_candidate_cv(db: Session, profile: CVUpload ):
     education = db.query(CVUpload).filter(CVUpload.candidate_id == profile.id).all()
     if not education:
         raise HTTPException(status_code=404, detail=" không có dữ liệu")
     return education
+
+def get_candidate_cv_by_id(db: Session, profile: CandidateProfile, cv_id: int):
+    cv = db.query(CVUpload).filter(
+        CVUpload.id == cv_id,
+        CVUpload.candidate_id == profile.id
+    ).first()
+
+    if not cv:
+        raise HTTPException(status_code=404, detail="CV không tồn tại")
+
+    return cv
 
 def create_candidate_cv(db: Session, file: UploadFile, candidate_id: int, user_id: int) -> CVUpload:
     #Validate định dạng file (chỉ cho phép PDF và DOCX)
@@ -176,5 +187,17 @@ def delete_candidate_cv(db: Session , cv_id: int , current_user: User)->None:
     if os.path.exists(cv_record.file_url):
         os.remove(cv_record.file_url)
         
-    db.delete(cv_id)
+    db.delete(cv_record)
     db.commit()
+
+
+def get_full_candidate_cv(db: Session, candidate_id: int):
+    profile = db.query(CandidateProfile).options(
+        joinedload(CandidateProfile.experiences),
+        joinedload(CandidateProfile.educations),
+        joinedload(CandidateProfile.certifications),
+    ).filter(
+        CandidateProfile.id == candidate_id
+    ).first()
+
+    return profile

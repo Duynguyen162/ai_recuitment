@@ -2,7 +2,6 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime ,ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB 
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-import enum
 from app.db.base import Base
 
 class CandidateProfile(Base):
@@ -16,7 +15,7 @@ class CandidateProfile(Base):
     portfolio_url = Column(String, nullable=True , default="")
     linkedin_url = Column(String, nullable=True , default="")
     github_url = Column(String, nullable=True , default="")
-    skilltags = Column(JSONB, default=list, nullable=True)
+    skill_tags = Column(JSONB, default=list, nullable=True)
     years_of_experience = Column(Integer, nullable=True , default=0)
 
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -27,8 +26,6 @@ class CandidateProfile(Base):
     educations = relationship("CandidateEducation", back_populates="candidate", cascade="all, delete-orphan")
     certifications = relationship("CandidateCertification", back_populates="candidate", cascade="all, delete-orphan")
     cv_uploads = relationship("CVUpload", back_populates="candidate", cascade="all, delete-orphan")
-    #Tác dụng lớn nhất của relationship:
-    # - JOIN tự động
-    # - lazy loading
-    # - cascade delete
-    # - truy cập object trực tiếp
+    applications = relationship("Application", back_populates="candidate_profile", cascade="all, delete-orphan")
+    saved_jobs = relationship("SaveJob", back_populates="candidate")
+    

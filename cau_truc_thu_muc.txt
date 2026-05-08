@@ -61,3 +61,24 @@ chạy dự án :
 
 tải thư viện mã hóa và tạo JWT
     pip install "passlib[bcrypt]" python-jose python-multipart
+
+1. Nhóm 2xx - Thành công (Success)
+200 OK: Yêu cầu thành công, server trả về dữ liệu.
+204 No Content: Server xử lý thành công nhưng không có nội dung trả về. 
+
+2. Nhóm 3xx - Chuyển hướng (Redirection)
+301 Moved Permanently: Trang web đã chuyển hướng vĩnh viễn sang URL mới.
+302 Found/Moved Temporarily: Trang web tạm thời chuyển hướng sang URL khác. 
+
+3. Nhóm 4xx - Lỗi Client (Client Error) - Lỗi từ phía người dùng
+400 Bad Request: Server không hiểu yêu cầu do cú pháp sai.
+401 Unauthorized: Yêu cầu cần xác thực người dùng (đăng nhập).
+403 Forbidden: Server từ chối truy cập, ngay cả khi đã đăng nhập.
+404 Not Found: Không tìm thấy trang web hoặc tài nguyên yêu cầu.
+408 Request Timeout: Quá thời gian chờ yêu cầu. 
+
+4. Nhóm 5xx - Lỗi Server (Server Error) - Lỗi từ phía máy chủ
+500 Internal Server Error: Lỗi chung của server, không xác định được lỗi cụ thể.
+502 Bad Gateway: Server nhận phản hồi không hợp lệ từ server thượng nguồn.
+503 Service Unavailable: Server quá tải hoặc đang bảo trì.
+504 Gateway Timeout: Server không nhận được phản hồi kịp thời từ server thượng nguồn.

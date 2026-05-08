@@ -22,3 +22,35 @@ class VerificationLogStatusEnum(str ,enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+
+class JobTypeEnum(str, enum.Enum):
+    full_time = "full_time"
+    part_time = "part_time"
+    remote = "remote"
+
+class JobStatusEnum(str, enum.Enum):
+    draft = "draft"          
+    published = "published"   
+    paused = "paused"         
+    closed = "closed" 
+
+class ApplicationStatusEnum(str ,enum.Enum):
+    pending = "pending"
+    review = "review"
+    interviewing = "interviewing"
+    hired = "hired"
+    rejected = "rejected"
+
+class SenderEnum(str , enum.Enum):
+    user = "user"
+    ai = "ai"
+
+class VipEnum(str ,enum.Enum):
+    processing = "processing"
+    ready = "ready"
+    failed = "failed"
+
+class DocumentStatus(str, enum.Enum):
+    processing = "processing"
+    ready = "ready"
+    failed = "failed"
