@@ -46,9 +46,10 @@ kích hoạt môi trường ảo:
     python -m venv venv
     venv\Scripts\activate
 
+vào môi trường ảo :  .\.venv312\Scripts\Activate.ps1
+
 chạy lệnh cài đặt các thư viện:
     python -m pip install -r requirements.txt
-
 chạy dự án :
     uvicorn app.main:app --reload
 

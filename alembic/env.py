@@ -24,6 +24,7 @@ from app.models.ai_matching_scores import AiMatchingScore
 from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
 from app.models.saved_jobs import SaveJob
+from app.models.interview import Interview
 
 #----------------------------------------------#
 

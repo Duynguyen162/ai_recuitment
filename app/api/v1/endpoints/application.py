@@ -1,98 +1,256 @@
+import os
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from app.db.database import get_db
-from app.models.candidate_profiles import CandidateProfile
-from app.models.user import User
+
 from app.api.deps import get_current_user
-from app.core.enum import RoleEnum
-from app.schemas.application_schema import ApplicationCreate, ApplicationResponse
-from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_application
-from app.services.ai_matching import run_ai_matching
+from app.core.enum import RoleEnum
+from app.db.database import get_db
+from app.models.user import User
+from app.schemas.application_schema import (
+    ApplicationCreate,
+    ApplicationResponse,
+    CandidateAppliedResponse,
+    ChangeStatusRequest,
+)
+from app.schemas.base_schema import ResponseSchema
 
 router = APIRouter()
 
-@router.get("/get_apply_job",response_model=ResponseSchema[List[ApplicationResponse]])
+
+@router.get(
+    "/get_apply_job",
+    response_model=ResponseSchema[List[ApplicationResponse]],
+    tags=["Candidate Jobs"],
+    summary="Ung vien lay danh sach job da apply",
+)
 def get_apply_job(
-    db:Session = Depends(get_db),
-    curent_user:User =Depends(get_current_user),
+    db: Session = Depends(get_db),
+    curent_user: User = Depends(get_current_user),
 ):
-    """lấy danh sách job đã ứng tuyển"""
+    """Lay danh sach job da ung tuyen."""
     if curent_user.role != RoleEnum.candidate:
-        raise HTTPException(status_code=404,detail="Chỉ ứng viên mới có chức năng này")
-    
+        raise HTTPException(
+            status_code=404,
+            detail="Chi ung vien moi co chuc nang nay",
+        )
+
     applications = crud_application.list_job_apply(db, curent_user.id)
 
     data = [
         ApplicationResponse(
-            id=str(app.id),
-            job_id=str(app.job_id),
+            id=app.id,
+            job_id=app.job_id,
             job_title=app.job_posting.title,
             company_name=app.job_posting.company.name,
-            status=app.status.name.upper(),
+            status=app.status.value,
             applied_at=app.applied_at,
-            cv_id=str(app.cv_upload_id) if app.cv_upload_id else None,
+            cv_id=app.cv_upload_id,
             cv_type=app.cv_type,
-            cv_name=app.cv_uploads.file_name if app.cv_uploads else "khong có",
+            cv_name=app.cv_uploads.file_name if app.cv_uploads else "khong co",
         )
         for app in applications
     ]
 
     return ResponseSchema(
         success=True,
-        data= data,
+        data=data,
         error=None,
-        meta=None
+        meta=None,
     )
 
-@router.post("/apply_job", response_model=ResponseSchema[ApplicationResponse])
+
+@router.post(
+    "/apply_job",
+    response_model=ResponseSchema[ApplicationResponse],
+    tags=["Candidate Jobs"],
+    summary="Ung vien apply vao job",
+)
 def apply_for_job(
     request_in: ApplicationCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """Ứng viên nộp đơn ứng tuyển vào 1 job"""
+    """Ung vien nop don ung tuyen vao 1 job."""
     if current_user.role != RoleEnum.candidate:
-        raise HTTPException(status_code=403 , detail="Chỉ ứng viên mới được ứng tuyển")
-        
+        raise HTTPException(
+            status_code=403,
+            detail="Chi ung vien moi duoc ung tuyen",
+        )
+
     new_applied = crud_application.create_application(db, current_user.id, request_in)
-    
-    # AI phân tích sẽ chạy ngầm
+
+    # AI phan tich se chay ngam
     # background_tasks.add_task(run_ai_matching, new_applied.id)
+    _ = background_tasks
 
     return ResponseSchema(
-        success=True, 
+        success=True,
         data=ApplicationResponse(
             id=new_applied.id,
             job_id=new_applied.job_id,
             job_title=new_applied.job_posting.title,
             company_name=new_applied.job_posting.company.name,
-            status=new_applied.status,
+            status=new_applied.status.value,
             applied_at=new_applied.applied_at,
-            cv_type = new_applied.cv_type,
-            cv_id=new_applied.cv_upload_id, 
-            cv_name=new_applied.cv_uploads.file_name if new_applied.cv_uploads else "" 
+            cv_type=new_applied.cv_type,
+            cv_id=new_applied.cv_upload_id,
+            cv_name=new_applied.cv_uploads.file_name if new_applied.cv_uploads else "",
         ),
         error=None,
-        meta=None
+        meta=None,
     )
 
-@router.delete("/delete_apply")
+
+@router.delete(
+    "/delete_apply",
+    tags=["Candidate Jobs"],
+    summary="Ung vien huy don apply",
+)
 def delete_apply_job(
-    job_id:int,
-    db:Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     if current_user.role != RoleEnum.candidate:
-        raise HTTPException(status_code=404, detail="Chỉ ứng viên mới có thể dùng chức năng này")
-    
-    crud_application.delete_application(db , current_user.id , job_id)
+        raise HTTPException(
+            status_code=404,
+            detail="Chi ung vien moi co the dung chuc nang nay",
+        )
+
+    crud_application.delete_application(db, current_user.id, job_id)
 
     return ResponseSchema(
         success=True,
         data=job_id,
         error=None,
-        meta=None
+        meta=None,
+    )
+
+
+@router.get(
+    "/list_candidate/{job_id}",
+    response_model=ResponseSchema[List[CandidateAppliedResponse]],
+    tags=["HR Applications"],
+    summary="HR lay danh sach ung vien da apply theo job",
+)
+def get_list_candidate_apply_by_job(
+    job_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """HR lay danh sach ung vien da apply vao 1 job, co phan trang."""
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(
+            status_code=403,
+            detail="Chi HR moi co the dung chuc nang nay",
+        )
+
+    offset = (page - 1) * page_size
+    applications, total, job = crud_application.list_candidates_applied_by_job(
+        db=db,
+        hr_user_id=current_user.id,
+        job_id=job_id,
+        limit=page_size,
+        offset=offset,
+    )
+
+    data = [
+        CandidateAppliedResponse(
+            application_id=application.id,
+            candidate_id=application.candidate_profile.id,
+            full_name=application.candidate_profile.full_name,
+            email=application.candidate_profile.user.email,
+            phone=application.candidate_profile.phone,
+            avatar_url=application.candidate_profile.avatar_url,
+            years_of_experience=application.candidate_profile.years_of_experience,
+            skill_tags=application.candidate_profile.skill_tags or [],
+            status=application.status.value,
+            applied_at=application.applied_at,
+            cv_id=application.cv_upload_id,
+            cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
+        )
+        for application in applications
+    ]
+
+    return ResponseSchema(
+        success=True,
+        data=data,
+        error=None,
+        meta={
+            "job_id": job.id,
+            "job_title": job.title,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) // page_size,
+        },
+    )
+
+
+@router.get(
+    "/hr/{application_id}/cv/view",
+    tags=["HR Applications"],
+    summary="HR xem CV cua ung vien",
+)
+def view_cv_by_hr(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """API xem CV cua HR."""
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(
+            status_code=404,
+            detail="Chi nha tuyen dung moi dung duoc api nay",
+        )
+
+    cv = crud_application.get_application_by_id(db, application_id)
+    file_path = cv.file_url
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File khong ton tai tren server")
+
+    return FileResponse(
+        path=file_path,
+        filename=cv.file_name,
+        headers={"Access-Control-Expose-Headers": "Content-Disposition"},
+    )
+
+
+@router.put(
+    "/{application_id}/status",
+    response_model=ResponseSchema[ApplicationResponse],
+    tags=["HR Applications"],
+    summary="HR cap nhat trang thai don ung tuyen",
+)
+def change_status(
+    application_id: int,
+    status: ChangeStatusRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    res = crud_application.change_status(db, application_id, status, current_user)
+
+    return ResponseSchema(
+        success=True,
+        data=ApplicationResponse(
+            id=res.id,
+            job_id=res.job_id,
+            job_title=res.job_posting.title,
+            company_name=res.job_posting.company.name,
+            status=res.status.value,
+            applied_at=res.applied_at,
+            cv_type=res.cv_type,
+            cv_id=res.cv_upload_id,
+            cv_name=res.cv_uploads.file_name if res.cv_uploads else "",
+        ),
+        error=None,
+        meta=None,
     )

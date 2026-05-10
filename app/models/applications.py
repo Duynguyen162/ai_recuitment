@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 from app.core.enum import ApplicationStatusEnum
 from app.db.base import Base
 from sqlalchemy import DateTime
-
+from app.models.interview import Interview
 class Application(Base):
     __tablename__ = "applications"
     id = Column(BIGINT, primary_key=True, index=True, autoincrement=True)
@@ -22,3 +22,4 @@ class Application(Base):
     
     chat_sessions = relationship("ChatSession", back_populates="application")
     cv_uploads = relationship("CVUpload", back_populates="applications")
+    interviews = relationship("Interview",back_populates="application",cascade="all, delete-orphan")

@@ -6,7 +6,7 @@ from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_user
 
 
-router = APIRouter()
+router = APIRouter(tags=["Auth"])
 
 @router.post("/register", response_model=ResponseSchema[UserResponse])
 def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
