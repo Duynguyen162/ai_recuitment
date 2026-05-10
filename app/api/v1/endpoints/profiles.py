@@ -27,7 +27,7 @@ from jinja2 import Environment, FileSystemLoader
 from playwright.async_api import async_playwright
 from urllib.parse import quote
 
-router = APIRouter()
+router = APIRouter(tags=["Candidate Profile"])
 
 @router.get("/profileCandidate", response_model = ResponseSchema[CandidateProfileResponse])
 def get_profile(db: Session = Depends(get_db), 
@@ -250,7 +250,6 @@ def get_list_cv(db: Session = Depends(get_db),
 def view_cv_file(
     cv_id: int,
     db: Session = Depends(get_db),
-    # Giữ nguyên các Depends xác thực của bạn để bảo mật file
     current_user: User = Depends(get_current_user),
     profile: CandidateProfile = Depends(get_current_candidate_profile)
 ):

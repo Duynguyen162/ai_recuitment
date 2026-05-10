@@ -9,7 +9,7 @@ from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_admin
 from pydantic import BaseModel
 
-router = APIRouter()
+router = APIRouter(tags=["Admin Companies"])
 
 @router.get("/list_companies", response_model=ResponseSchema[list[CompanyResponse]])
 def get_list_company(

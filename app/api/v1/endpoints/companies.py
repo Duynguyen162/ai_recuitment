@@ -20,7 +20,7 @@ from app.schemas.company_schema import (
 )
 from app.services.rag_service import process_and_store_document, resolve_document_path
 
-router = APIRouter()
+router = APIRouter(tags=["HR Companies"])
 
 
 @router.post("/register_company", response_model=ResponseSchema[CompanyResponse])

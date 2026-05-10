@@ -1,5 +1,7 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import List
+
 from app.core.enum import ApplicationStatusEnum
 
 
@@ -20,3 +22,24 @@ class ApplicationResponse(BaseModel):
     cv_name:str 
     class Config:
         from_attributes = True
+
+
+class CandidateAppliedResponse(BaseModel):
+    application_id: int
+    candidate_id: int
+    full_name: str | None = None
+    email: str
+    phone: str | None = None
+    avatar_url: str | None = None
+    years_of_experience: int | None = None
+    skill_tags: List[str] = Field(default_factory=list)
+    status: str
+    applied_at: datetime
+    cv_id: int | None = None
+    cv_name: str | None = None
+
+    class Config:
+        from_attributes = True
+
+class ChangeStatusRequest(BaseModel):
+    status: ApplicationStatusEnum

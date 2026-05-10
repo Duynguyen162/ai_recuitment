@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks
 from app.services.email_service import send_reset_password_email
 from app.api.deps import get_current_active_user
 
-router = APIRouter()
+router = APIRouter(tags=["Auth"])
 
 # Đọc từ env để dễ switch giữa dev và production
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"

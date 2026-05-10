@@ -5,7 +5,7 @@ from enum import Enum
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.schemas.base_schema import ResponseSchema
 
-router = APIRouter()
+router = APIRouter(tags=["Upload"])
 
 UPLOAD_ROOT = "uploads"
 

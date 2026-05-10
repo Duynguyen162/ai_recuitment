@@ -3,10 +3,11 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base import Base
 from app.core.enum import RoleEnum, StatusEnum
+from app.models.interview import Interview
 
 class User(Base):
     __tablename__ = "users"
-
+    
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
@@ -17,5 +18,6 @@ class User(Base):
     
     candidate_profile = relationship("CandidateProfile", back_populates="user", uselist=False)
     company_memberships = relationship("CompanyMember", back_populates="user")
-
+    interviews_conducted = relationship("Interview",back_populates="interviewer")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 

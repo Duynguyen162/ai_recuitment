@@ -1,15 +1,37 @@
 # app/crud/crud_job.py
 from fastapi import HTTPException
-from sqlalchemy.orm import Session ,joinedload
-from app.models.companies import CompanyMember
-from app.models.saved_jobs import SaveJob
+from sqlalchemy import String, and_, or_
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+
+from app.core.enum import JobStatusEnum
 from app.models.applications import Application
 from app.models.candidate_profiles import CandidateProfile
+from app.models.companies import CompanyMember
 from app.models.job_posting import JobPosting
-from app.schemas.job_schema import JobPostingCreate, JobPostingUpdate
-from app.core.enum import JobStatusEnum
-from sqlalchemy import String, and_, column, or_, select
-from sqlalchemy import func
+from app.models.saved_jobs import SaveJob
+from app.schemas.job_schema import (
+    JobPostingCreate,
+    JobPostingUpdate,
+    JobStatusActionEnum,
+)
+
+
+JOB_STATUS_TRANSITIONS: dict[JobStatusEnum, dict[JobStatusActionEnum, JobStatusEnum]] = {
+    JobStatusEnum.draft: {
+        JobStatusActionEnum.publish: JobStatusEnum.published,
+    },
+    JobStatusEnum.published: {
+        JobStatusActionEnum.pause: JobStatusEnum.paused,
+        JobStatusActionEnum.close: JobStatusEnum.closed,
+    },
+    JobStatusEnum.paused: {
+        JobStatusActionEnum.publish: JobStatusEnum.published,
+        JobStatusActionEnum.close: JobStatusEnum.closed,
+    },
+    JobStatusEnum.closed: {},
+}
+
 
 def get_list_job(
     db: Session,
@@ -17,14 +39,9 @@ def get_list_job(
     limit: int = 5,
     offset: int = 0,
 ):
-    """
-    danh sách các job đã đăng (có phân trang)
-    """
+    """Danh sách các job do HR tạo."""
 
-    query = db.query(JobPosting).filter(
-        JobPosting.created_by == user_id
-    )
-
+    query = db.query(JobPosting).filter(JobPosting.created_by == user_id)
     total = query.count()
 
     jobs = (
@@ -37,6 +54,7 @@ def get_list_job(
 
     return jobs, total
 
+
 def get_public_jobs(
     db: Session,
     keyword: str | None = None,
@@ -47,42 +65,37 @@ def get_public_jobs(
     limit: int = 20,
     offset: int = 0,
 ):
-    """tìm kiếm tin tuyển dụng công khai với nhiều tiêu chí khác nhau (có phân trang)"""
-    
+    """Tìm kiếm các job public với nhiều tiêu chí."""
+
     query = db.query(JobPosting).filter(JobPosting.status == JobStatusEnum.published)
 
-    # HELPER: Escape pattern
-    def escape_pattern(s: str) -> str:
-        return s.replace('%', r'\%').replace('_', r'\_') if s else ""
-
+    def escape_pattern(value: str) -> str:
+        return value.replace("%", r"\%").replace("_", r"\_") if value else ""
 
     if keyword and keyword.strip():
-        keywords = [w.strip() for w in keyword.split() if w.strip()]
+        keywords = [word.strip() for word in keyword.split() if word.strip()]
         conditions = []
-        
+
         for word in keywords:
             pattern = f"%{escape_pattern(word)}%"
-            
-            # Title, Description, Tags
             title_cond = func.unaccent(JobPosting.title).ilike(
-                func.unaccent(pattern), escape='\\'
+                func.unaccent(pattern), escape="\\"
             )
             desc_cond = func.unaccent(JobPosting.description).ilike(
-                func.unaccent(pattern), escape='\\'
+                func.unaccent(pattern), escape="\\"
             )
-            tag_cond = func.unaccent(
-                func.cast(JobPosting.tags, String)
-            ).ilike(func.unaccent(pattern), escape='\\')
-            
+            tag_cond = func.unaccent(func.cast(JobPosting.tags, String)).ilike(
+                func.unaccent(pattern), escape="\\"
+            )
             conditions.append(or_(title_cond, desc_cond, tag_cond))
-        
+
         query = query.filter(and_(*conditions))
 
     if tag and tag.strip() and not keyword:
         pattern = f"%{escape_pattern(tag.strip())}%"
         query = query.filter(
             func.unaccent(func.cast(JobPosting.tags, String)).ilike(
-                func.unaccent(pattern), escape='\\'
+                func.unaccent(pattern), escape="\\"
             )
         )
 
@@ -96,10 +109,10 @@ def get_public_jobs(
         pattern = f"%{escape_pattern(location.strip())}%"
         query = query.filter(
             func.unaccent(JobPosting.location).ilike(
-                func.unaccent(pattern), escape='\\'
+                func.unaccent(pattern), escape="\\"
             )
         )
-        
+
     total = query.count()
     jobs = (
         query.order_by(JobPosting.created_at.desc())
@@ -110,64 +123,93 @@ def get_public_jobs(
 
     return jobs, total
 
-def update_job_status(db: Session, job_id: int, company_id: int, new_status: JobStatusEnum):
-    """HR đổi trạng thái tin tuyển dụng """
+
+def update_job_status(
+    db: Session,
+    job_id: int,
+    company_id: int,
+    action: JobStatusActionEnum,
+):
+    """Đổi trạng thái job theo state transition đã định nghĩa."""
     job = db.query(JobPosting).filter(
         JobPosting.id == job_id,
-        JobPosting.company_id == company_id
+        JobPosting.company_id == company_id,
     ).first()
-    
-    if job:
-        job.status = new_status
-        db.commit()
-        db.refresh(job)
+
+    if not job:
+        return None
+
+    next_status = JOB_STATUS_TRANSITIONS.get(job.status, {}).get(action)
+    if not next_status:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không thể '{action.value}' khi job đang ở trạng thái '{job.status.value}'",
+        )
+
+    job.status = next_status
+    db.commit()
+    db.refresh(job)
     return job
 
+
 def create_job_posting(db: Session, company_id: int, user_id: int, job_in: JobPostingCreate):
-    """Lưu tin tuyển dụng mới vào CSDL"""
+    """Lưu job mới vào CSDL, mặc định tạo ở trạng thái draft."""
     data = job_in.model_dump()
     if isinstance(data.get("tags"), str):
         import json
+
         data["tags"] = json.loads(data["tags"])
 
-    try:    
+    data.pop("status", None)
+
+    try:
         db_job = JobPosting(
             **data,
             company_id=company_id,
             created_by=user_id,
+            status=JobStatusEnum.draft,
         )
         db.add(db_job)
         db.commit()
         db.refresh(db_job)
         return db_job
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print(e)
         raise
 
-def update_job_crud(db:Session, job_id:int ,job: JobPostingUpdate ,user_id: int ):
-    """Cập nhật trang thái job"""
-    company_member = db.query(CompanyMember).filter(CompanyMember.user_id == user_id ).first()
-    if company_member:
-        job_db = db.query(JobPosting).filter(
-            JobPosting.id == job_id,
-            JobPosting.company_id == company_member.company_id
-        ).first()
-    
-    if job_db:
-        update_data = job.model_dump(exclude_unset=True)
 
-        for key, value in update_data.items():
-            setattr(job_db, key, value)
-        db.commit()
-        db.refresh(job_db)
+def update_job_crud(db: Session, job_id: int, job: JobPostingUpdate, user_id: int):
+    """Chỉ cho phép cập nhật nội dung khi job còn draft."""
+    company_member = db.query(CompanyMember).filter(CompanyMember.user_id == user_id).first()
+    if not company_member:
+        raise HTTPException(status_code=404, detail="Bạn chưa thuộc công ty nào")
+
+    job_db = db.query(JobPosting).filter(
+        JobPosting.id == job_id,
+        JobPosting.company_id == company_member.company_id,
+    ).first()
+
+    if not job_db:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job hoặc bạn không có quyền")
+
+    if job_db.status != JobStatusEnum.draft:
+        raise HTTPException(
+            status_code=400,
+            detail="Chỉ job ở trạng thái draft mới được sửa nội dung",
+        )
+
+    update_data = job.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(job_db, key, value)
+
+    db.commit()
+    db.refresh(job_db)
     return job_db
 
 
-def get_proposed_jobs(db: Session ,offset: int = 0, limit: int = 20):
-    """Lấy danh sách các job mới nhất để hiển thị (có phân trang)"""
+def get_proposed_jobs(db: Session, offset: int = 0, limit: int = 20):
+    """Lấy danh sách job mới nhất để hiển thị."""
     query = db.query(JobPosting).filter(JobPosting.status == JobStatusEnum.published)
-
     total = query.count()
 
     jobs = (
@@ -180,18 +222,18 @@ def get_proposed_jobs(db: Session ,offset: int = 0, limit: int = 20):
 
     return jobs, total
 
-def is_save(db:Session , job_id:int, user_id:int):
-    """kiểm tra xem job đã được user lưu chưa"""
+
+def is_save(db: Session, job_id: int, user_id: int):
+    """Kiểm tra ứng viên đã lưu job hay chưa."""
     job = db.query(SaveJob).join(CandidateProfile).filter(
         SaveJob.job_id == job_id,
-        CandidateProfile.user_id == user_id 
+        CandidateProfile.user_id == user_id,
     ).first()
-    if job:
-        return True
-    return False
+    return job is not None
 
-def get_job_by_id(db: Session, job_id: int, user_id: int | None ):
-    """lấy thông tin chi tiết của 1 job"""
+
+def get_job_by_id(db: Session, job_id: int, user_id: int | None):
+    """Lấy thông tin chi tiết của một job."""
     job = (
         db.query(JobPosting)
         .options(joinedload(JobPosting.company))
@@ -201,27 +243,28 @@ def get_job_by_id(db: Session, job_id: int, user_id: int | None ):
 
     if not job:
         return None
-    
+
     applied = False
     save = False
-    
+
     if user_id:
         applied = has_applied(db, user_id, job_id)
-        save = is_save(db,job_id,user_id)
+        save = is_save(db, job_id, user_id)
 
-    return job, applied ,save
+    return job, applied, save
 
 
-def delete_job(db: Session , job_id: int):
-    """ xóa job đã đăng """
+def delete_job(db: Session, job_id: int):
+    """Xóa job đã đăng."""
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
-    
+
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy job này")
-    
+
     db.delete(job)
     db.commit()
     return None
+
 
 def has_applied(db: Session, user_id: int, job_id: int):
     profile = db.query(CandidateProfile).filter(
@@ -233,7 +276,7 @@ def has_applied(db: Session, user_id: int, job_id: int):
 
     application = db.query(Application).filter(
         Application.candidate_id == profile.id,
-        Application.job_id == job_id
+        Application.job_id == job_id,
     ).first()
 
     return application is not None
@@ -248,7 +291,7 @@ def list_save_job(db: Session, user_id: int):
 
 
 def save_job(db: Session, job_id: int, user_id: int):
-    """lưu lại job yêu thích hoặc đang chú ý"""
+    """Lưu job yêu thích hoặc đang chú ý."""
     candidate = db.query(CandidateProfile).filter(
         CandidateProfile.user_id == user_id
     ).first()
@@ -256,10 +299,9 @@ def save_job(db: Session, job_id: int, user_id: int):
     if not candidate:
         raise HTTPException(status_code=404, detail="Chưa có profile")
 
-    # check đã lưu chưa
     existing = db.query(SaveJob).filter(
         SaveJob.candidate_id == candidate.id,
-        SaveJob.job_id == job_id
+        SaveJob.job_id == job_id,
     ).first()
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
 
@@ -267,23 +309,20 @@ def save_job(db: Session, job_id: int, user_id: int):
         raise HTTPException(status_code=400, detail="Job đã được lưu trước đó")
 
     try:
-        save = SaveJob(
-            candidate_id=candidate.id, 
-            job_id=job_id
-        )
+        save = SaveJob(candidate_id=candidate.id, job_id=job_id)
         db.add(save)
         db.commit()
         db.refresh(save)
-        return save,job
-
-    except Exception as e:
+        return save, job
+    except Exception:
         db.rollback()
-        raise e
-    
-def delete_saved_job(db:Session , user_id:int, job_id:int):
+        raise
+
+
+def delete_saved_job(db: Session, user_id: int, job_id: int):
     save_job = db.query(SaveJob).join(CandidateProfile).filter(
         CandidateProfile.user_id == user_id,
-        SaveJob.job_id == job_id
+        SaveJob.job_id == job_id,
     ).first()
     db.delete(save_job)
     db.commit()

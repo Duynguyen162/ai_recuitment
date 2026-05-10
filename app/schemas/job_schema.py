@@ -1,3 +1,4 @@
+import enum
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List
@@ -21,14 +22,22 @@ class JobPostingBase(BaseModel):
     salary_max: int | None = None
     years_of_experience: int | None = None
     job_type: JobTypeEnum
-    status: JobStatusEnum | None = None
     expired_at: datetime
 
 class JobPostingCreate(JobPostingBase):
     pass
 
-class JobPostingUpdate(JobPostingBase):
-    pass
+class JobPostingUpdate(BaseModel):
+    title: str = Field(..., description="Tiêu đề công việc")
+    description: str = Field(..., description="Mô tả công việc")
+    requirements: str = Field(..., description="Yêu cầu ứng viên")
+    location: str | None = Field(None, description="Địa điểm làm việc")
+    tags: list[str] = Field(default=[], description="Danh sách từ khóa kỹ năng")
+    salary_min: int | None = None
+    salary_max: int | None = None
+    years_of_experience: int | None = None
+    job_type: JobTypeEnum
+    expired_at: datetime
 
 class JobDetailResponse(BaseModel):
     id: int
@@ -61,5 +70,11 @@ class JobPostingResponse(JobPostingBase):
     class Config:
         from_attributes = True
 
-class StatusUpdateRequest(BaseModel):
-    status: JobStatusEnum
+class JobStatusActionEnum(str, enum.Enum):
+    publish = "publish"
+    pause = "pause"
+    close = "close"
+
+
+class JobStatusActionRequest(BaseModel):
+    action: JobStatusActionEnum
