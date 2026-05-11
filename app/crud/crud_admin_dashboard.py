@@ -1,37 +1,39 @@
 """
 CRUD logic cho các API Admin:
-  - A-01: Dashboard Stats & Charts
-  - A-04/A-05: Quản lý & Duyệt Công Ty
-  - A-06: Kiểm Duyệt Tin Tuyển Dụng
-  - A-07: Giám Sát Hệ Thống AI
+  - Dashboard Stats & Charts
+  - Quản lý & Duyệt Công Ty
+  - Kiểm Duyệt Tin Tuyển Dụng
+  - Giám Sát Hệ Thống AI
+  - Quản lý Ứng Viên (danh sách, tìm kiếm, khóa tài khoản)
 """
 
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import HTTPException
-from sqlalchemy import func, cast, Date, Integer
+from sqlalchemy import func, cast, Date, Integer, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.enum import (
+    AdminJobActionEnum,
     ApplicationStatusEnum,
     CompanyVerificationStatusEnum,
+    JobReportStatusEnum,
     JobStatusEnum,
     RoleEnum,
+    ReportAdminActionEnum,
+    StatusEnum,
     VerificationLogStatusEnum,
 )
 from app.models.ai_logs import AiAlertConfig, AiLog
 from app.models.ai_matching_scores import AiMatchingScore
 from app.models.applications import Application
+from app.models.candidate_profiles import CandidateProfile
 from app.models.companies import Company, CompanyMember, CompanyVerification, CompanyDocument
 from app.models.job_posting import JobPosting
-from app.models.job_reports import JobReport, JobReportStatusEnum
+from app.models.job_reports import JobReport
 from app.models.user import User
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# A-01: Dashboard Stats
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_admin_dashboard_stats(db: Session) -> dict:
     now = datetime.now(timezone.utc)
@@ -50,9 +52,10 @@ def get_admin_dashboard_stats(db: Session) -> dict:
         Company.verification_status == CompanyVerificationStatusEnum.pending
     ).count()
 
-    # Job bị "flag" = job đã bị pause hoặc có báo cáo chưa xử lý
+    # Job bị "flag" = job đang bị paused hoặc bị Admin close
     flagged_jobs = db.query(JobPosting).filter(
-        JobPosting.status == JobStatusEnum.paused
+        JobPosting.status.in_([JobStatusEnum.paused, JobStatusEnum.closed]),
+        JobPosting.locked_by_admin == True,
     ).count()
 
     pending_reports = db.query(JobReport).filter(
@@ -108,11 +111,6 @@ def get_admin_dashboard_charts(db: Session, days: int = 7) -> dict:
         "role_distribution": role_distribution,
         "applications_by_status": applications_by_status,
     }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# A-04/A-05: Companies
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_admin_companies(
     db: Session,
@@ -231,14 +229,14 @@ def admin_update_company_status(
     db.refresh(company)
     return company
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# A-06: Job Reports & Flagged Jobs
-# ─────────────────────────────────────────────────────────────────────────────
-
 def get_flagged_jobs(db: Session, page: int = 1, page_size: int = 20) -> tuple:
-    """Job đang bị pause được xem là đã bị flag."""
-    query = db.query(JobPosting).filter(JobPosting.status == JobStatusEnum.paused)
+    """Job bị flag = đang paused HOẶC đã bị Admin lock."""
+    query = db.query(JobPosting).filter(
+        or_(
+            JobPosting.status == JobStatusEnum.paused,
+            JobPosting.locked_by_admin == True,
+        )
+    )
     total = query.count()
     jobs = (
         query.options(joinedload(JobPosting.company))
@@ -253,7 +251,8 @@ def get_flagged_jobs(db: Session, page: int = 1, page_size: int = 20) -> tuple:
             "title": j.title,
             "company_name": j.company.name if j.company else "",
             "status": j.status.value,
-            "flagged_reason": None,  # Placeholder — có thể thêm field sau
+            "locked_by_admin": j.locked_by_admin,
+            "flagged_reason": None,
             "created_at": j.created_at,
         }
         for j in jobs
@@ -261,33 +260,51 @@ def get_flagged_jobs(db: Session, page: int = 1, page_size: int = 20) -> tuple:
     return result, total
 
 
-def admin_update_job_status(db: Session, job_id: int, action: str) -> JobPosting:
+def admin_update_job_status(
+    db: Session,
+    job_id: int,
+    action: AdminJobActionEnum,
+) -> JobPosting:
     """
-    action: 'allow' → published, 'pause' → paused, 'close' → closed
+    Admin thực hiện hành động lên job:
+    - allow  → published  + locked_by_admin=False (HR kiểm soát lại)
+    - pause  → paused     (tạm khóa để xem xét, chưa lock cứng)
+    - close  → closed     + locked_by_admin=True  (HR không mở lại được)
     """
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy job")
 
-    action_map = {
-        "allow": JobStatusEnum.published,
-        "pause": JobStatusEnum.paused,
-        "close": JobStatusEnum.closed,
+    action_map: dict[AdminJobActionEnum, tuple[JobStatusEnum, bool]] = {
+        AdminJobActionEnum.allow: (JobStatusEnum.published, False),
+        AdminJobActionEnum.pause: (JobStatusEnum.paused,    False),
+        AdminJobActionEnum.close: (JobStatusEnum.closed,    True),
     }
-    if action not in action_map:
-        raise HTTPException(status_code=400, detail=f"Hành động không hợp lệ: {action}")
 
-    job.status = action_map[action]
+    new_status, new_lock = action_map[action]
+    job.status = new_status
+    job.locked_by_admin = new_lock
+
     db.commit()
     db.refresh(job)
     return job
 
 
-def get_job_reports(db: Session, page: int = 1, page_size: int = 20) -> tuple:
+def get_job_reports(
+    db: Session,
+    status: Optional[JobReportStatusEnum] = None,
+    admin_action: Optional[ReportAdminActionEnum] = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple:
     query = db.query(JobReport).options(
         joinedload(JobReport.job).joinedload(JobPosting.company),
         joinedload(JobReport.reporter),
     )
+    if status:
+        query = query.filter(JobReport.status == status)
+    if admin_action:
+        query = query.filter(JobReport.admin_action == admin_action)
     total = query.count()
     reports = (
         query.order_by(JobReport.created_at.desc())
@@ -303,7 +320,10 @@ def get_job_reports(db: Session, page: int = 1, page_size: int = 20) -> tuple:
             "company_name": r.job.company.name if r.job and r.job.company else "",
             "reporter_email": r.reporter.email if r.reporter else None,
             "reason": r.reason,
-            "status": r.status.value,
+            "status": r.status,
+            "admin_action": r.admin_action,
+            "admin_note": r.admin_note,
+            "resolved_at": r.resolved_at,
             "created_at": r.created_at,
         }
         for r in reports
@@ -311,18 +331,181 @@ def get_job_reports(db: Session, page: int = 1, page_size: int = 20) -> tuple:
     return result, total
 
 
-def resolve_job_report(db: Session, report_id: int, new_status: str) -> JobReport:
+def resolve_job_report(
+    db: Session,
+    report_id: int,
+    new_status: JobReportStatusEnum,
+    admin_action: ReportAdminActionEnum,
+    admin_note: Optional[str] = None,
+) -> JobReport:
+    """
+    Xử lý báo cáo job:
+    - Lưu status mới (resolved / dismissed)
+    - Lưu admin_action để biết admin đã làm gì
+    - Lưu admin_note (nếu có)
+    - Đánh dấu thời điểm xử lý
+    """
     report = db.query(JobReport).filter(JobReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Không tìm thấy báo cáo")
 
-    if new_status not in ("resolved", "dismissed"):
-        raise HTTPException(status_code=400, detail="Trạng thái không hợp lệ")
+    if new_status == JobReportStatusEnum.pending:
+        raise HTTPException(
+            status_code=400,
+            detail="Không thể đặt báo cáo về trạng thái pending",
+        )
 
-    report.status = JobReportStatusEnum(new_status)
+    if report.status != JobReportStatusEnum.pending:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Báo cáo đã được xử lý với trạng thái '{report.status.value}'",
+        )
+
+    report.status       = new_status
+    report.admin_action = admin_action
+    report.admin_note   = admin_note
+    report.resolved_at  = datetime.now(timezone.utc)
+
     db.commit()
     db.refresh(report)
     return report
+
+def get_admin_candidates(
+    db: Session,
+    keyword: Optional[str] = None,
+    status: Optional[StatusEnum] = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple:
+    """
+    Lấy danh sách ứng viên (role=candidate) với filter và phân trang.
+    keyword: tìm theo email hoặc tên (full_name trong CandidateProfile).
+    """
+    query = (
+        db.query(User)
+        .filter(User.role == RoleEnum.candidate)
+        .outerjoin(User.candidate_profile)
+    )
+
+    if status:
+        query = query.filter(User.status == status)
+
+    if keyword and keyword.strip():
+        kw = f"%{keyword.strip()}%"
+        query = query.filter(
+            or_(
+                User.email.ilike(kw),
+                CandidateProfile.full_name.ilike(kw),
+            )
+        )
+
+    total = query.count()
+    users = (
+        query.options(joinedload(User.candidate_profile))
+        .order_by(User.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    result = []
+    for u in users:
+        profile = u.candidate_profile
+        # Đếm số đơn ứng tuyển qua profile
+        total_applications = 0
+        if profile:
+            total_applications = (
+                db.query(Application)
+                .filter(Application.candidate_id == profile.id)
+                .count()
+            )
+        result.append({
+            "id": u.id,
+            "email": u.email,
+            "status": u.status,
+            "full_name": profile.full_name if profile else None,
+            "phone": profile.phone if profile else None,
+            "avatar_url": profile.avatar_url if profile else None,
+            "years_of_experience": profile.years_of_experience if profile else None,
+            "total_applications": total_applications,
+            "created_at": u.created_at,
+        })
+
+    return result, total
+
+
+def get_admin_candidate_detail(db: Session, candidate_id: int) -> dict:
+    """Chi tiết ứng viên: thông tin user + profile + thống kê."""
+    user = (
+        db.query(User)
+        .options(joinedload(User.candidate_profile))
+        .filter(User.id == candidate_id, User.role == RoleEnum.candidate)
+        .first()
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy ứng viên")
+
+    profile = user.candidate_profile
+    total_applications = 0
+    total_reports_filed = 0
+
+    if profile:
+        total_applications = (
+            db.query(Application)
+            .filter(Application.candidate_id == profile.id)
+            .count()
+        )
+
+    total_reports_filed = (
+        db.query(JobReport)
+        .filter(JobReport.reported_by == user.id)
+        .count()
+    )
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "status": user.status,
+        "created_at": user.created_at,
+        "full_name": profile.full_name if profile else None,
+        "phone": profile.phone if profile else None,
+        "bio": profile.bio if profile else None,
+        "avatar_url": profile.avatar_url if profile else None,
+        "portfolio_url": profile.portfolio_url if profile else None,
+        "linkedin_url": profile.linkedin_url if profile else None,
+        "github_url": profile.github_url if profile else None,
+        "skill_tags": profile.skill_tags if profile else None,
+        "years_of_experience": profile.years_of_experience if profile else None,
+        "total_applications": total_applications,
+        "total_reports_filed": total_reports_filed,
+    }
+
+
+def admin_lock_candidate(
+    db: Session,
+    candidate_id: int,
+    lock: bool,
+) -> User:
+    """
+    Khóa (banned) hoặc mở khóa (active) tài khoản ứng viên.
+    Admin không thể tự khóa tài khoản admin khác.
+    """
+    user = db.query(User).filter(
+        User.id == candidate_id,
+        User.role == RoleEnum.candidate,
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy ứng viên")
+
+    if lock and user.status == StatusEnum.banned:
+        raise HTTPException(status_code=400, detail="Tài khoản đã bị khóa từ trước")
+    if not lock and user.status == StatusEnum.active:
+        raise HTTPException(status_code=400, detail="Tài khoản đang hoạt động bình thường")
+
+    user.status = StatusEnum.banned if lock else StatusEnum.active
+    db.commit()
+    db.refresh(user)
+    return user
 
 def get_ai_monitoring_stats(db: Session) -> dict:
     now = datetime.now(timezone.utc)

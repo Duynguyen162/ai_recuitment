@@ -28,12 +28,8 @@ def get_current_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(401, "User không tồn tại")
-    user = db.query(User).filter(User.id == int(user_id)).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Không tìm thấy người dùng"
-        )
+    if user.status == StatusEnum.banned:
+        raise HTTPException(403, "User bị khóa")
     return user
 
 http_bearer_optional = HTTPBearer(auto_error=False)

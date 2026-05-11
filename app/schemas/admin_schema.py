@@ -1,7 +1,15 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
-from app.core.enum import CompanyVerificationStatusEnum, VerificationLogStatusEnum, DocumentStatus
+from app.core.enum import (
+    CompanyVerificationStatusEnum,
+    VerificationLogStatusEnum,
+    DocumentStatus,
+    JobReportStatusEnum,
+    AdminJobActionEnum,
+    ReportAdminActionEnum,
+    StatusEnum,
+)
 
 
 # ─── A-01: Dashboard Stats ───────────────────────────────────────────────────
@@ -96,6 +104,7 @@ class AdminJobFlaggedItem(BaseModel):
     title: str
     company_name: str
     status: str
+    locked_by_admin: bool
     flagged_reason: Optional[str] = None
     created_at: datetime
 
@@ -107,16 +116,90 @@ class AdminJobReportItem(BaseModel):
     company_name: str
     reporter_email: Optional[str] = None
     reason: str
-    status: str
+    status: JobReportStatusEnum
+    # Chi tiết xử lý (chỉ có sau khi Admin đã xử lý)
+    admin_action: Optional[ReportAdminActionEnum] = None
+    admin_note: Optional[str] = None
+    resolved_at: Optional[datetime] = None
     created_at: datetime
 
 
 class ResolveReportRequest(BaseModel):
-    status: str  # "resolved" | "dismissed"
+    """
+    Chỉ cho phép chuyển sang resolved | dismissed.
+    bắt buộc truyền admin_action để Frontend hiển thị đú́ng hành động đã thực hiện.
+    """
+    status: JobReportStatusEnum
+    admin_action: ReportAdminActionEnum    # Bắt buộc — phải chọn admin đã làm gì
+    admin_note: Optional[str] = None       # Ghi chú nội bộ (tùy chọn)
+
+    class Config:
+        use_enum_values = True
 
 
 class JobActionRequest(BaseModel):
-    action: str  # "allow" | "pause" | "close"
+    """
+    Hành động của Admin lên Job.
+    - allow  → published  + gỡ lock (HR có thể kiểm soát lại)
+    - pause  → paused     (tạm khóa để xem xét, chưa lock vĩnh viễn)
+    - close  → closed     + bật locked_by_admin (HR không mở lại được)
+    """
+    action: AdminJobActionEnum
+
+    class Config:
+        use_enum_values = True
+
+
+# ─── A-08: Candidates (mới) ──────────────────────────────────────────────────
+
+class AdminCandidateListItem(BaseModel):
+    """Thông tin tóm tắt ứng viên trong danh sách Admin."""
+    id: int                          # user.id
+    email: str
+    status: StatusEnum
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    years_of_experience: Optional[int] = None
+    total_applications: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminCandidateDetailResponse(BaseModel):
+    """Chi tiết ứng viên — dành cho trang xem xét của Admin."""
+    id: int
+    email: str
+    status: StatusEnum
+    created_at: datetime
+    # Profile
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
+    portfolio_url: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    skill_tags: Optional[List[str]] = None
+    years_of_experience: Optional[int] = None
+    # Thống kê
+    total_applications: int
+    total_reports_filed: int         # Số lần ứng viên này đã báo cáo job
+
+    class Config:
+        from_attributes = True
+
+
+class LockCandidateRequest(BaseModel):
+    """
+    Khóa hoặc mở tài khoản ứng viên.
+    - lock=true  → user.status = banned
+    - lock=false → user.status = active
+    """
+    lock: bool
+    reason: Optional[str] = None     # Ghi chú nội bộ (tùy chọn)
 
 
 # ─── A-07: AI Monitoring ─────────────────────────────────────────────────────

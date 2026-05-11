@@ -1,15 +1,10 @@
 from datetime import datetime, timedelta, timezone   
 from typing import Optional
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 from app.core.config import settings
 import hashlib
-
-# Khởi tạo thuật toán bcrypt để mã hóa mật khẩu
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# pyrefly: ignore [missing-import]
 from passlib.context import CryptContext
-import hashlib
 
 # Khởi tạo bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
