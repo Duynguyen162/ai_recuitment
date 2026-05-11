@@ -53,6 +53,14 @@ def login(response: Response, request_in: UserLogin, db: Session = Depends(get_d
 
     access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
 
+    response.set_cookie(
+        key="role",
+        value=user.role.value,
+        max_age=86400,  # 24 hours
+        secure=False,  # True nếu dùng HTTPS
+        httponly=False,  # Frontend cần access được
+        samesite="lax"
+    )
     
     return {
         "success": True,
