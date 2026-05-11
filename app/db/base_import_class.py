@@ -11,3 +11,5 @@ from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
 from app.models.interview import Interview
 from app.models.notifications import Notification
+from app.models.ai_logs import AiLog, AiAlertConfig
+from app.models.job_reports import JobReport
