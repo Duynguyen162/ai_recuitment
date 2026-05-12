@@ -1,4 +1,5 @@
 # app/crud/crud_job.py
+from app.models.job_reports import JobReport
 from fastapi import HTTPException
 from sqlalchemy import String, and_, or_
 from sqlalchemy import func
@@ -130,7 +131,11 @@ def update_job_status(
     company_id: int,
     action: JobStatusActionEnum,
 ):
-    """Đổi trạng thái job theo state transition đã định nghĩa."""
+    """Đổi trạng thái job theo state transition đã định nghĩa.
+
+    Lưu ý: nếu job đang bị Admin khóa (locked_by_admin=True),
+    HR không thể thay đổi trạng thái — chỉ Admin mới gỡ được.
+    """
     job = db.query(JobPosting).filter(
         JobPosting.id == job_id,
         JobPosting.company_id == company_id,
@@ -138,6 +143,13 @@ def update_job_status(
 
     if not job:
         return None
+
+    # ── Kiểm tra Admin lock ───────────────────────────────────────────
+    if job.locked_by_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Job đã bị Admin khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.",
+        )
 
     next_status = JOB_STATUS_TRANSITIONS.get(job.status, {}).get(action)
     if not next_status:
@@ -327,3 +339,15 @@ def delete_saved_job(db: Session, user_id: int, job_id: int):
     db.delete(save_job)
     db.commit()
     return None
+
+def report_job(db: Session, job_id: int, user_id: int, reason: str | None = None):
+    try:
+        report = JobReport(job_id=job_id, reported_by=user_id, reason=reason)
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        return report
+    except Exception:
+        db.rollback()
+        raise
+    

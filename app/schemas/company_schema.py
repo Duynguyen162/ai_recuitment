@@ -31,7 +31,20 @@ class CompanyResponse(CompanyBase):
 
     class Config:
         from_attributes = True
+
+class PublicCompanyResponse(CompanyBase):
+    id: int
+    created_at: datetime
+    follower_count: int = 0
+    is_followed: bool = False
+
+    class Config:
+        from_attributes = True
         
+class CompanyFollowResponse(BaseModel):
+    is_followed: bool
+    follower_count: int
+
 # BẢNG COMPANY_VERIFICATIONS
 
 class CompanyVerificationCreate(BaseModel):

@@ -56,3 +56,22 @@ class DocumentStatus(str, enum.Enum):
     processing = "processing"
     ready = "ready"
     failed = "failed"
+
+class JobReportStatusEnum(str, enum.Enum):
+    """Trạng thái xử lý báo cáo tin tuyển dụng"""
+    pending = "pending"       # Chưa xử lý
+    resolved = "resolved"     # Đã xử lý (có hành động)
+    dismissed = "dismissed"   # Bỏ qua (không vi phạm)
+
+class AdminJobActionEnum(str, enum.Enum):
+    """Hành động của Admin lên Job"""
+    allow = "allow"   # Mở lại job (gỡ khóa Admin)
+    pause = "pause"   # Tạm dừng để xem xét
+    close = "close"   # Đóng vĩnh viễn (Admin lock)
+
+class ReportAdminActionEnum(str, enum.Enum):
+    """Hành động Admin thực hiện khi xử lý báo cáo"""
+    paused_job   = "paused_job"    # Tạm dừng tin tuyển dụng
+    closed_job   = "closed_job"    # Đóng vĩnh viễn + khóa tin
+    warned       = "warned"        # Cảnh cáo công ty (không động vào job)
+    no_action    = "no_action"     # Bỏ qua, không có hành động

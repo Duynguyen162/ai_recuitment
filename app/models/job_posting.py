@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BIGINT, Text, ForeignKey, Enum, DateTime
+from sqlalchemy import Column, Integer, String, BIGINT, Text, ForeignKey, Enum, DateTime, Boolean
 from sqlalchemy.dialects.postgresql import JSONB 
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -26,6 +26,8 @@ class JobPosting(Base):
     
     job_type = Column(Enum(JobTypeEnum), nullable=False)
     status = Column(Enum(JobStatusEnum), default=JobStatusEnum.draft, nullable=False)
+    # Admin lock: khi True, HR không thể tự ý đổi trạng thái job
+    locked_by_admin = Column(Boolean, default=False, nullable=False, server_default="false")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     expired_at = Column(DateTime(timezone=True), nullable=False)

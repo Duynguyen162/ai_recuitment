@@ -1,3 +1,4 @@
+from app.models.job_reports import JobReportStatusEnum
 import enum
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -78,3 +79,21 @@ class JobStatusActionEnum(str, enum.Enum):
 
 class JobStatusActionRequest(BaseModel):
     action: JobStatusActionEnum
+
+class JobReposting(BaseModel):
+    reason: str
+    
+class JobReportingRequest(BaseModel):
+    job_id: int = Field(..., description="ID của tin tuyển dụng bị báo cáo")
+    reason: str = Field(..., description="Lý do báo cáo")
+
+class JobReportingResponse(BaseModel):
+    id: int
+    job_id: int
+    reason: str
+    reported_by: int
+    created_at: datetime
+    status: JobReportStatusEnum
+    
+    class Config:
+        from_attributes = True

@@ -1,4 +1,5 @@
-# app/api/v1/endpoints/jobs.py
+from app.schemas.job_schema import JobReposting
+from app.schemas.job_schema import JobReportingResponse
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -347,3 +348,27 @@ def deleted_saved_job(
         error=None,
         meta=None,
     )
+
+@router.post(
+    "/report_job/",
+    tags = ["Candidate Jobs"],
+    summary = "Ứng viên báo cáo job",
+    response_model= ResponseSchema[JobReportingResponse]
+    )
+def report_job(
+    job_id: int,
+    reason: JobReposting,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.candidate:
+        raise HTTPException(status_code=403, detail="Chỉ ứng viên mới báo cáo được job")
+    
+    report = crud_job.report_job(db, job_id, current_user.id, reason.reason)
+    return ResponseSchema(
+        success=True,
+        data=JobReportingResponse.model_validate(report),
+        error=None,
+        meta=None,
+    )
+

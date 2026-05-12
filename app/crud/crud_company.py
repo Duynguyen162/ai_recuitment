@@ -1,8 +1,11 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from app.core.enum import CompanyVerificationStatusEnum , VerificationLogStatusEnum
+from app.core.enum import CompanyVerificationStatusEnum , VerificationLogStatusEnum, JobStatusEnum
 from app.models.companies import Company, CompanyDocument, CompanyVerification, CompanyMember
 from app.models.user import User
+from app.models.company_follows import CompanyFollow
+from app.models.job_posting import JobPosting
+from app.models.candidate_profiles import CandidateProfile
 from app.schemas.company_schema import CompanyCreate, CompanyDocumentCreate,CompanyUpdate
 from app.services.rag_service import delete_document_from_chroma
 
@@ -114,3 +117,70 @@ def delete_company_document(db: Session, doc_id: int, user_id: int):
     db.commit()
 
     return True 
+
+def get_public_company(db: Session, company_id: int, user_id: int | None = None):
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công ty")
+        
+    follower_count = db.query(CompanyFollow).filter(CompanyFollow.company_id == company_id).count()
+    is_followed = False
+    if user_id:
+        profile = db.query(CandidateProfile).filter(CandidateProfile.user_id == user_id).first()
+        if profile:
+            follow = db.query(CompanyFollow).filter(
+                CompanyFollow.company_id == company_id,
+                CompanyFollow.candidate_id == profile.id
+            ).first()
+            if follow:
+                is_followed = True
+
+    return {
+        **company.__dict__,
+        "follower_count": follower_count,
+        "is_followed": is_followed
+    }
+
+from sqlalchemy.orm import joinedload
+
+def get_public_company_jobs(db: Session, company_id: int, page: int = 1, page_size: int = 10):
+    query = db.query(JobPosting).options(joinedload(JobPosting.company)).filter(
+        JobPosting.company_id == company_id,
+        JobPosting.status == JobStatusEnum.published
+    ).order_by(JobPosting.created_at.desc())
+    
+    total = query.count()
+    jobs = query.offset((page - 1) * page_size).limit(page_size).all()
+    return jobs, total
+
+def toggle_follow_company(db: Session, candidate_profile_id: int, company_id: int) -> bool:
+    """Toggles follow status. Returns True if now followed, False if unfollowed."""
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công ty")
+
+    follow = db.query(CompanyFollow).filter(
+        CompanyFollow.candidate_id == candidate_profile_id,
+        CompanyFollow.company_id == company_id
+    ).first()
+
+    if follow:
+        db.delete(follow)
+        db.commit()
+        return False
+    else:
+        new_follow = CompanyFollow(
+            candidate_id=candidate_profile_id,
+            company_id=company_id
+        )
+        db.add(new_follow)
+        db.commit()
+        return True
+
+def get_company_follower_count(db: Session, company_id: int) -> int:
+    return db.query(CompanyFollow).filter(CompanyFollow.company_id == company_id).count()
+
+def list_companies_followed(db: Session, candidate_profile_id: int):
+    return db.query(Company).join(CompanyFollow).filter(
+        CompanyFollow.candidate_id == candidate_profile_id
+    ).all()

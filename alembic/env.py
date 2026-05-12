@@ -25,7 +25,8 @@ from app.models.chat_messages import ChatMessage
 from app.models.chat_sessions import ChatSession
 from app.models.saved_jobs import SaveJob
 from app.models.interview import Interview
-
+from app.models.job_reports import JobReport
+from app.models.company_follows import CompanyFollow
 #----------------------------------------------#
 
 
