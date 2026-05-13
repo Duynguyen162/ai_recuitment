@@ -28,4 +28,5 @@ class CandidateProfile(Base):
     cv_uploads = relationship("CVUpload", back_populates="candidate", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="candidate_profile", cascade="all, delete-orphan")
     saved_jobs = relationship("SaveJob", back_populates="candidate")
+    chat_sessions = relationship("ChatSession", back_populates="candidate")
     

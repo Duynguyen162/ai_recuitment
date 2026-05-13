@@ -1,4 +1,5 @@
 import os
+
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -6,7 +7,8 @@ import docx
 from chromadb.config import Settings as ChromaSettings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.core.config import settings
 from app.core.enum import DocumentStatus
@@ -29,13 +31,13 @@ def resolve_document_path(file_url: str) -> str:
     return str(Path(file_url).expanduser().resolve())
 
 
-def _get_embeddings() -> OpenAIEmbeddings:
-    if not settings.OPENAI_API_KEY:
-        raise ValueError("Thiếu OPENAI_API_KEY, không thể tạo embedding.")
+def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
+    if not settings.GOOGLE_API_KEY:
+        raise ValueError("Thiếu GOOGLE_API_KEY, không thể tạo embedding.")
 
-    return OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        openai_api_key=settings.OPENAI_API_KEY,
+    return GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001", 
+        google_api_key=settings.GOOGLE_API_KEY,
     )
 
 
@@ -109,3 +111,4 @@ def delete_document_from_chroma(doc_id: int, company_id: int):
     ids = results.get("ids", [])
     if ids:
         vector_store.delete(ids=ids)
+

@@ -61,6 +61,10 @@ openapi_tags = [
         "name": "Notifications",
         "description": "Thông báo in-app cho ứng viên và HR.",
     },
+    {
+        "name":"Chatbot",
+        "description":"API cho chat với AI"
+    }
 ]
 
 app = FastAPI(

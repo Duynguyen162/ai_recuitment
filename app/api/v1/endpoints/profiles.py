@@ -277,7 +277,7 @@ async def generate_pdf_from_html(html: str):
             browser = await p.chromium.launch()
             page = await browser.new_page()
             
-            # ✅ Set viewport để layout đúng
+            # Set viewport để layout đúng
             await page.set_viewport_size({"width": 1200, "height": 1600})
             
             await page.set_content(html, wait_until="networkidle")

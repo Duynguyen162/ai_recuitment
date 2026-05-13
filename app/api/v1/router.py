@@ -1,3 +1,4 @@
+from app.api.v1.endpoints import chat
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import admin, admin_dashboard, application, auth, companies, public_companies, dashboard, interview, jobs, notifications, profiles, register, upload
@@ -17,3 +18,5 @@ api_router.include_router(application.router, prefix="/application")
 api_router.include_router(interview.router, prefix="/interview")
 api_router.include_router(notifications.router, prefix="/notifications")
 api_router.include_router(dashboard.router, prefix="/hr/dashboard", tags=["HR Dashboard"])
+api_router.include_router(chat.router)
+
