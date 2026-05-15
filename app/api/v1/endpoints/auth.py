@@ -61,7 +61,14 @@ def _clear_auth_cookie(response: Response) -> None:
         httponly=COOKIE_CONFIG["httponly"],
         samesite=COOKIE_CONFIG["samesite"],
     )
-    
+    response.delete_cookie(
+        key=ROLE_COOKIE_CONFIG["key"],
+        path=ROLE_COOKIE_CONFIG["path"],
+        secure=ROLE_COOKIE_CONFIG["secure"],
+        httponly=ROLE_COOKIE_CONFIG["httponly"],
+        samesite=ROLE_COOKIE_CONFIG["samesite"],
+    )
+
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_active_user)):
     return {
@@ -86,6 +93,9 @@ def login(response: Response, request_in: UserLogin, db: Session = Depends(get_d
         raise HTTPException(status_code=401, detail="Email hoặc mật khẩu không đúng")
     if user.status != StatusEnum.active:
         raise HTTPException(status_code=403, detail="Tài khoản của bạn đã bị khóa")
+    
+    if user.role == RoleEnum.admin:
+        raise HTTPException(status_code=401, detail="Email hoặc mật khẩu không đúng")
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -97,6 +107,36 @@ def login(response: Response, request_in: UserLogin, db: Session = Depends(get_d
     return {
         "success": True,
         "message": "Đăng nhập thành công",
+        "data": {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role.value,
+        },
+    }
+
+@router.post("/admin/login")
+def admin_login(response: Response, request_in: UserLogin, db: Session = Depends(get_db)):
+    user = authenticate_user(db, request_in.email, request_in.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Email hoặc mật khẩu Admin không đúng")
+    
+    # Chỉ cho phép Admin
+    if user.role != RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập trang quản trị")
+        
+    if user.status != StatusEnum.active:
+        raise HTTPException(status_code=403, detail="Tài khoản Admin đã bị khóa")
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id), "role": user.role.value},
+        expires_delta=access_token_expires,
+    )
+    _set_auth_cookie(response, access_token, user.role.value)
+
+    return {
+        "success": True,
+        "message": "Đăng nhập Admin thành công",
         "data": {
             "id": user.id,
             "email": user.email,

@@ -12,15 +12,13 @@ from app.core.enum import (
 )
 
 
-# ─── A-01: Dashboard Stats ───────────────────────────────────────────────────
 
 class AdminDashboardStats(BaseModel):
-    # Row 1
     total_users: int
     total_companies: int
     total_jobs: int
     total_applications: int
-    # Row 2
+    
     active_users_today: int
     pending_companies: int
     flagged_jobs: int

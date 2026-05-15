@@ -32,6 +32,7 @@ def resolve_document_path(file_url: str) -> str:
 
 
 def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
+    """ Lấy model embedding từ Google Generative AI """
     if not settings.GOOGLE_API_KEY:
         raise ValueError("Thiếu GOOGLE_API_KEY, không thể tạo embedding.")
 

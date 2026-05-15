@@ -1,4 +1,7 @@
 # app/crud/crud_job.py
+from app.api.v1.endpoints import admin_dashboard
+from app.core.enum import RoleEnum
+from app.models.user import User
 from app.models.job_reports import JobReport
 from fastapi import HTTPException
 from sqlalchemy import String, and_, or_
@@ -37,12 +40,17 @@ JOB_STATUS_TRANSITIONS: dict[JobStatusEnum, dict[JobStatusActionEnum, JobStatusE
 def get_list_job(
     db: Session,
     user_id: int,
+    status: JobStatusEnum | None = None,
     limit: int = 5,
     offset: int = 0,
 ):
     """Danh sách các job do HR tạo."""
 
     query = db.query(JobPosting).filter(JobPosting.created_by == user_id)
+
+    if status:
+        query = query.filter(JobPosting.status == status)
+
     total = query.count()
 
     jobs = (
@@ -144,21 +152,31 @@ def update_job_status(
     if not job:
         return None
 
-    # ── Kiểm tra Admin lock ───────────────────────────────────────────
     if job.locked_by_admin:
         raise HTTPException(
             status_code=403,
             detail="Job đã bị Admin khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.",
         )
 
-    next_status = JOB_STATUS_TRANSITIONS.get(job.status, {}).get(action)
-    if not next_status:
+    # 1. Lấy danh sách các action hợp lệ cho trạng thái hiện tại
+    current_status = job.status
+    allowed_transitions = JOB_STATUS_TRANSITIONS.get(current_status, {})
+    print(allowed_transitions)
+    # 2. Kiểm tra action request có nằm trong danh sách cho phép không
+    if action not in allowed_transitions:
+        valid_actions = [a.value for a in allowed_transitions.keys()]
         raise HTTPException(
             status_code=400,
-            detail=f"Không thể '{action.value}' khi job đang ở trạng thái '{job.status.value}'",
+            detail=(
+                f"Không thể thực hiện '{action.value}' khi job đang ở trạng thái '{current_status.value}'. "
+                f"Các thao tác hợp lệ lúc này: {valid_actions if valid_actions else 'Không có'}"
+            ),
         )
 
+    # 3. Thực hiện chuyển đổi trạng thái
+    next_status = allowed_transitions[action]
     job.status = next_status
+
     db.commit()
     db.refresh(job)
     return job
@@ -234,6 +252,61 @@ def get_proposed_jobs(db: Session, offset: int = 0, limit: int = 20):
 
     return jobs, total
 
+def get_job_match_cv(
+    db: Session,
+    current_user: User,
+    offset: int = 0,
+    limit: int = 20
+):
+    """Lấy job phù hợp bằng cách search theo tag"""
+
+    if current_user.role != RoleEnum.candidate:
+        raise HTTPException(status_code=403, detail="Chỉ ứng viên mới dùng được API này")
+
+    candidate = db.query(CandidateProfile).filter(
+        CandidateProfile.user_id == current_user.id
+    ).first()
+
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Bạn chưa có CV")
+
+    candidate_tags = candidate.skill_tags or []
+
+    if not candidate_tags:
+        return [], 0
+
+    job_query = db.query(JobPosting).filter(
+        JobPosting.status == JobStatusEnum.published
+    )
+
+    def normalize(value: str):
+        return value.lower().replace(" ", "")
+    conditions = []
+
+    for tag in candidate_tags:
+        norm_tag = normalize(tag)
+        pattern = f"%{norm_tag}%"
+        #tạo điều kiệu cho job tag (job.tags LIKE "%reactjs%", "%nodejs%")
+        tag_cond = func.replace(
+            func.lower(func.cast(JobPosting.tags, String)),
+            " ",
+            ""
+        ).ilike(pattern)
+
+        conditions.append(tag_cond)
+        
+    job_query = job_query.filter(or_(*conditions))
+
+    total = job_query.count()
+    jobs = (
+        job_query
+        .order_by(JobPosting.created_at.desc())
+        .offset(max(0, offset))
+        .limit(min(limit, 100))
+        .all()
+    )
+
+    return jobs, total
 
 def is_save(db: Session, job_id: int, user_id: int):
     """Kiểm tra ứng viên đã lưu job hay chưa."""

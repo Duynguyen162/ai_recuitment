@@ -68,13 +68,17 @@ class JobPostingResponse(JobPostingBase):
     status: JobStatusEnum
     created_at: datetime
     company: CompanyShortResponse
+    is_save:bool | None = None
     class Config:
         from_attributes = True
 
 class JobStatusActionEnum(str, enum.Enum):
     publish = "publish"
+    published = "published" # Alias cho publish
     pause = "pause"
+    paused = "paused"       # Alias cho pause
     close = "close"
+    closed = "closed"       # Alias cho close
 
 
 class JobStatusActionRequest(BaseModel):

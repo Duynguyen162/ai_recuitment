@@ -1,3 +1,4 @@
+from app.schemas.job_schema import JobStatusActionEnum
 from app.schemas.job_schema import JobReposting
 from app.schemas.job_schema import JobReportingResponse
 from typing import List
@@ -6,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_current_user_optional
-from app.core.enum import CompanyVerificationStatusEnum, RoleEnum
+from app.core.enum import CompanyVerificationStatusEnum, RoleEnum, JobStatusEnum
 from app.crud import crud_job
 from app.db.database import get_db
 from app.models.companies import Company, CompanyMember
@@ -33,6 +34,7 @@ router = APIRouter()
 def get_job_posting(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    status: JobStatusEnum | None = Query(None, description="Lọc theo trạng thái"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
 ):
@@ -43,6 +45,7 @@ def get_job_posting(
     jobs, total = crud_job.get_list_job(
         db,
         current_user.id,
+        status=status,
         limit=page_size,
         offset=offset,
     )
@@ -100,7 +103,7 @@ def search_public_jobs(
     )
 
 
-@router.patch(
+@router.put(
     "/{job_id}/status",
     response_model=ResponseSchema[JobPostingResponse],
     tags=["HR Jobs"],
@@ -108,7 +111,7 @@ def search_public_jobs(
 )
 def change_job_status(
     job_id: int,
-    payload: JobStatusActionRequest,
+    action: JobStatusActionEnum = Query(..., alias="status", description="Hành động: published, paused, closed"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -120,11 +123,19 @@ def change_job_status(
     if not member:
         raise HTTPException(status_code=404, detail="Bạn chưa thuộc công ty nào")
 
+    # Mặc định mapping nếu frontend gửi string trạng thái thay vì động từ hành động
+    mapping = {
+        JobStatusActionEnum.published: JobStatusActionEnum.publish,
+        JobStatusActionEnum.paused: JobStatusActionEnum.pause,
+        JobStatusActionEnum.closed: JobStatusActionEnum.close,
+    }
+    final_action = mapping.get(action, action)
+
     updated_job = crud_job.update_job_status(
         db=db,
         job_id=job_id,
         company_id=member.company_id,
-        action=payload.action,
+        action=final_action,
     )
 
     if not updated_job:
@@ -234,6 +245,34 @@ def get_proposed_jobs(
         },
     )
 
+@router.get(
+    "/job_matched_cv",
+    response_model=ResponseSchema[list[JobPostingResponse]],
+    tags=["Public Jobs"],
+    summary="Lấy danh sách job phù hợp với các tag của ứng viên",
+)
+def get_job_match_cv(
+    limit: int = Query(20, description="Số lượng mỗi trang"),
+    offset: int = Query(0, description="Bắt đầu từ bản ghi số mấy"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.candidate:
+        raise HTTPException(status_code=403, detail="Chỉ ứng viên mới có chức năng này")
+        
+    proposed_jobs, total = crud_job.get_job_match_cv(db , current_user, limit=limit, offset=offset,)
+    data = [JobPostingResponse.model_validate(job) for job in proposed_jobs]
+
+    return ResponseSchema(
+        success=True,
+        data=data,
+        error=None,
+        meta={
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
 
 @router.delete(
     "/delete_jobs",
@@ -350,7 +389,7 @@ def deleted_saved_job(
     )
 
 @router.post(
-    "/report_job/",
+    "/report_job",
     tags = ["Candidate Jobs"],
     summary = "Ứng viên báo cáo job",
     response_model= ResponseSchema[JobReportingResponse]

@@ -154,7 +154,7 @@ def get_public_company_jobs(db: Session, company_id: int, page: int = 1, page_si
     return jobs, total
 
 def toggle_follow_company(db: Session, candidate_profile_id: int, company_id: int) -> bool:
-    """Toggles follow status. Returns True if now followed, False if unfollowed."""
+    """chuyển đổi trạng thái theo dõi. Trả về True nếu đang được theo dõi, False nếu chưa được theo dõi."""
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Không tìm thấy công ty")

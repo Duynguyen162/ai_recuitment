@@ -27,6 +27,8 @@ from app.models.saved_jobs import SaveJob
 from app.models.interview import Interview
 from app.models.job_reports import JobReport
 from app.models.company_follows import CompanyFollow
+from app.models.notifications import Notification
+from app.models.ai_logs import AiLog, AiAlertConfig
 #----------------------------------------------#
 
 
