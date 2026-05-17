@@ -1,4 +1,5 @@
 import os
+from app.core.config import settings
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -25,17 +26,17 @@ router = APIRouter()
     "/get_apply_job",
     response_model=ResponseSchema[List[ApplicationResponse]],
     tags=["Candidate Jobs"],
-    summary="Ung vien lay danh sach job da apply",
+    summary="Ứng viên lấy danh sách job đã apply",
 )
 def get_apply_job(
     db: Session = Depends(get_db),
     curent_user: User = Depends(get_current_user),
 ):
-    """Lay danh sach job da ung tuyen."""
+    """Lấy danh sách job ứng viên đã apply."""
     if curent_user.role != RoleEnum.candidate:
         raise HTTPException(
             status_code=404,
-            detail="Chi ung vien moi co chuc nang nay",
+            detail="Chỉ ứng viên mới có chức năng này",
         )
 
     applications = crud_application.list_job_apply(db, curent_user.id)
@@ -50,7 +51,8 @@ def get_apply_job(
             applied_at=app.applied_at,
             cv_id=app.cv_upload_id,
             cv_type=app.cv_type,
-            cv_name=app.cv_uploads.file_name if app.cv_uploads else "khong co",
+            cv_name=app.cv_uploads.file_name if app.cv_uploads else "Không có CV",
+            cv_url=f"{settings.BASE_URL}/{app.cv_uploads.file_url}" if app.cv_uploads else None,
         )
         for app in applications
     ]
@@ -100,6 +102,7 @@ def apply_for_job(
             cv_type=new_applied.cv_type,
             cv_id=new_applied.cv_upload_id,
             cv_name=new_applied.cv_uploads.file_name if new_applied.cv_uploads else "",
+            cv_url=f"{settings.BASE_URL}/{new_applied.cv_uploads.file_url}" if new_applied.cv_uploads else None,
         ),
         error=None,
         meta=None,
@@ -175,6 +178,7 @@ def get_list_candidate_apply_by_job(
             applied_at=application.applied_at,
             cv_id=application.cv_upload_id,
             cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
+            cv_url=f"{settings.BASE_URL}/{application.cv_uploads.file_url}" if application.cv_uploads else None,
         )
         for application in applications
     ]
@@ -250,6 +254,7 @@ def change_status(
             cv_type=res.cv_type,
             cv_id=res.cv_upload_id,
             cv_name=res.cv_uploads.file_name if res.cv_uploads else "",
+            cv_url=f"{settings.BASE_URL}/{res.cv_uploads.file_url}" if res.cv_uploads else None,
         ),
         error=None,
         meta=None,

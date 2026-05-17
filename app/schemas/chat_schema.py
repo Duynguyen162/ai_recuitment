@@ -3,9 +3,8 @@ from datetime import datetime
 from app.core.enum import SenderEnum
 
 class ChatRequest(BaseModel):
-    content: str
-    job_id: int | None = None
-    session_id: int | None = None
+    message: str
+    job_id: int
 
 class ChatMessageResponse(BaseModel):
     id: int
@@ -17,6 +16,7 @@ class ChatMessageResponse(BaseModel):
         from_attributes = True
 
 class ChatResponse(BaseModel):
-    session_id: int
-    user_message: ChatMessageResponse
-    ai_response: ChatMessageResponse
+    id: str
+    sender: SenderEnum
+    text: str
+    timestamp: datetime

@@ -1,30 +1,73 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException, Response
+from datetime import timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_active_user
+from app.core.config import settings
 from app.core.enum import RoleEnum, StatusEnum
+from app.core.security import create_access_token, create_password_reset_token
 from app.crud.crud_user import authenticate_user, get_user_by_email, reset_pass
 from app.db.database import get_db
-from app.core.security import create_access_token, create_password_reset_token
 from app.models.user import User
 from app.schemas.user_schema import ForgotPasswordRequest, ResetPasswordRequest, UserLogin
-from fastapi import BackgroundTasks
 from app.services.email_service import send_reset_password_email
-from app.api.deps import get_current_active_user
 
 router = APIRouter(tags=["Auth"])
 
-# Đọc từ env để dễ switch giữa dev và production
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 
-# Cookie config tập trung — tránh không nhất quán giữa login/logout
 COOKIE_CONFIG = {
     "key": "access_token",
     "httponly": True,
-    "secure": IS_PRODUCTION,       # False ở dev (HTTP), True ở prod (HTTPS)
-    "samesite": "lax",             # "lax" hoạt động tốt khi same-origin qua proxy
+    "secure": IS_PRODUCTION,
+    "samesite": "lax",
     "path": "/",
 }
 
+ROLE_COOKIE_CONFIG = {
+    "key": "role",
+    "httponly": False,
+    "secure": IS_PRODUCTION,
+    "samesite": "lax",
+    "path": "/",
+}
+
+def _get_access_token_max_age() -> int:
+    return settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+
+def _set_auth_cookie(response: Response, access_token: str,role:str) -> None:
+    max_age = _get_access_token_max_age()
+
+    response.set_cookie(
+        **COOKIE_CONFIG,
+        value=access_token,
+        max_age=max_age,
+    )
+    response.set_cookie(
+        **ROLE_COOKIE_CONFIG,
+        value=role,
+        max_age=max_age,
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=COOKIE_CONFIG["key"],
+        path=COOKIE_CONFIG["path"],
+        secure=COOKIE_CONFIG["secure"],
+        httponly=COOKIE_CONFIG["httponly"],
+        samesite=COOKIE_CONFIG["samesite"],
+    )
+    response.delete_cookie(
+        key=ROLE_COOKIE_CONFIG["key"],
+        path=ROLE_COOKIE_CONFIG["path"],
+        secure=ROLE_COOKIE_CONFIG["secure"],
+        httponly=ROLE_COOKIE_CONFIG["httponly"],
+        samesite=ROLE_COOKIE_CONFIG["samesite"],
+    )
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_active_user)):
@@ -50,31 +93,62 @@ def login(response: Response, request_in: UserLogin, db: Session = Depends(get_d
         raise HTTPException(status_code=401, detail="Email hoặc mật khẩu không đúng")
     if user.status != StatusEnum.active:
         raise HTTPException(status_code=403, detail="Tài khoản của bạn đã bị khóa")
-
-    access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
-
-    response.set_cookie(
-        key="role",
-        value=user.role.value,
-        max_age=86400,  # 24 hours
-        secure=False,  # True nếu dùng HTTPS
-        httponly=False,  # Frontend cần access được
-        samesite="lax"
-    )
     
+    if user.role == RoleEnum.admin:
+        raise HTTPException(status_code=401, detail="Email hoặc mật khẩu không đúng")
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id), "role": user.role.value},
+        expires_delta=access_token_expires,
+    )
+    _set_auth_cookie(response, access_token, user.role.value)
+
     return {
         "success": True,
+        "message": "Đăng nhập thành công",
         "data": {
             "id": user.id,
             "email": user.email,
             "role": user.role.value,
-            "token": access_token,
-        }
+        },
     }
 
+@router.post("/admin/login")
+def admin_login(response: Response, request_in: UserLogin, db: Session = Depends(get_db)):
+    user = authenticate_user(db, request_in.email, request_in.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Email hoặc mật khẩu Admin không đúng")
+    
+    # Chỉ cho phép Admin
+    if user.role != RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập trang quản trị")
+        
+    if user.status != StatusEnum.active:
+        raise HTTPException(status_code=403, detail="Tài khoản Admin đã bị khóa")
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id), "role": user.role.value},
+        expires_delta=access_token_expires,
+    )
+    _set_auth_cookie(response, access_token, user.role.value)
+
+    return {
+        "success": True,
+        "message": "Đăng nhập Admin thành công",
+        "data": {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role.value,
+        },
+    }
+
+
 @router.post("/logout")
-def logout():
-    return {"success": True, "message": "Đã đăng xuất"}
+def logout(response: Response):
+    _clear_auth_cookie(response)
+    return {"success": True, "message": "Đã đăng xuất thành công"}
 
 
 @router.post("/forgot-password")

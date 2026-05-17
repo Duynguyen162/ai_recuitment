@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from datetime import datetime, timedelta, timezone   
 from typing import Optional
 from jose import jwt, JWTError
@@ -12,15 +13,20 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def get_password_hash(password: str) -> str:
     """Mã hóa mật khẩu  dùng BCrypt"""
     # Giới hạn password tại 72 bytes TRƯỚC khi hash
-    if len(password.encode('utf-8')) > 72:
-        password = password[:72]
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=400,
+            detail="Mật khẩu không được vượt quá 72 bytes"
+        )
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Xác minh mật khẩu dùng BCrypt"""
     if len(plain_password.encode('utf-8')) > 72:
-        plain_password = plain_password[:72]
-    
+        raise HTTPException(
+            status_code=400,
+            detail="Mật khẩu không được vượt quá 72 bytes"
+        )
     return pwd_context.verify(plain_password, hashed_password)
 
 # Tạo token JWT

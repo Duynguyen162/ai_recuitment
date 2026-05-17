@@ -15,11 +15,12 @@ class ApplicationResponse(BaseModel):
     job_id: int
     job_title: str 
     company_name: str
-    status: str
+    status: ApplicationStatusEnum
     applied_at: datetime
     cv_type: str
     cv_id: int | None = None
-    cv_name:str 
+    cv_name: str 
+    cv_url: str | None = None
     class Config:
         from_attributes = True
 
@@ -37,6 +38,7 @@ class CandidateAppliedResponse(BaseModel):
     applied_at: datetime
     cv_id: int | None = None
     cv_name: str | None = None
+    cv_url: str | None = None
 
     class Config:
         from_attributes = True

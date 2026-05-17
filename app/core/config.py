@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     MAIL_SERVER: str = "smtp.gmail.com"
     
     OPENAI_API_KEY: str
+    GOOGLE_API_KEY: str = ""
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

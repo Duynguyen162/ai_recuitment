@@ -233,15 +233,28 @@ def delete_certification(certification_id: int,
 #=============================================================#
 
 
+from app.core.config import settings
+
 @router.get("/cv_upload",response_model = ResponseSchema[list[CVUploadResponse]])
 def get_list_cv(db: Session = Depends(get_db),
                        current_user: User = Depends(get_current_user),
                        profile: CandidateProfile = Depends(get_current_candidate_profile)):
     """lấy danh sách các cv """
-    url_cv = get_candidate_cv(db,profile)
+    cvs = get_candidate_cv(db,profile)
+    
+    data = [
+        CVUploadResponse(
+            id=cv.id,
+            candidate_id=cv.candidate_id,
+            file_name=cv.file_name,
+            file_url=f"{settings.BASE_URL}/{cv.file_url}" if cv.file_url else None
+        )
+        for cv in cvs
+    ]
+
     return ResponseSchema(
         success=True,
-        data=url_cv,
+        data=data,
         error=None,
         meta=None
     )
@@ -277,7 +290,7 @@ async def generate_pdf_from_html(html: str):
             browser = await p.chromium.launch()
             page = await browser.new_page()
             
-            # ✅ Set viewport để layout đúng
+            # Set viewport để layout đúng
             await page.set_viewport_size({"width": 1200, "height": 1600})
             
             await page.set_content(html, wait_until="networkidle")

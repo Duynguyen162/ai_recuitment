@@ -4,6 +4,7 @@ import shutil
 from enum import Enum
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.schemas.base_schema import ResponseSchema
+from app.core.config import settings
 
 router = APIRouter(tags=["Upload"])
 
@@ -15,7 +16,7 @@ class UploadFolderEnum(str, Enum):
     avatars = "avatars"
     documents = "documents"
 
-BASE_URL = "http://localhost:8000"  
+# BASE_URL = "http://localhost:8000"  
 
 @router.post("/file", response_model=ResponseSchema[str])
 async def upload_general_file(
@@ -35,7 +36,7 @@ async def upload_general_file(
     
     unique_filename = f"{uuid.uuid4()}{ext}"
     file_path = os.path.join(target_dir, unique_filename)
-    file_url = f"{BASE_URL}/{file_path.replace(os.sep, '/')}"
+    file_url = f"{settings.BASE_URL}/{file_path.replace(os.sep, '/')}"
     
     # 3. Lưu file
     try:

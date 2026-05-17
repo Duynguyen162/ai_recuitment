@@ -106,7 +106,7 @@ def create_application(db: Session, user_id: int, request_in: ApplicationCreate)
 
 
 def delete_application(db: Session, user_id: int, job_id: int):
-    """Huy don ung tuyen nhung van giu lich su."""
+    """Xóa đơn ứng tuyển khỏi database."""
     candidate_profile = db.query(CandidateProfile).filter(
         CandidateProfile.user_id == user_id
     ).first()
@@ -114,41 +114,34 @@ def delete_application(db: Session, user_id: int, job_id: int):
     if not candidate_profile:
         raise HTTPException(status_code=404, detail="Chua co profile")
 
+    # Tìm đơn ứng tuyển mới nhất cho job này
     del_applied = db.query(Application).filter(
         Application.candidate_id == candidate_profile.id,
         Application.job_id == job_id,
-    ).first()
+    ).order_by(Application.applied_at.desc()).first()
 
     if not del_applied:
         raise HTTPException(
             status_code=404,
-            detail="Chua ung tuyen vao cong ty nay, khong the huy",
+            detail="Chưa ứng tuyển vào công việc này",
         )
 
-    if del_applied.status in {
-        ApplicationStatusEnum.hired,
-        ApplicationStatusEnum.left_company,
+    # Chỉ cho phép xóa nếu đang ở trạng thái chờ xử lý hoặc đang xem xét
+    if del_applied.status not in {
+        ApplicationStatusEnum.pending,
+        ApplicationStatusEnum.review,
+        ApplicationStatusEnum.withdrawn,
     }:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Ho so da duoc tuyen hoac da ghi nhan roi cong ty, "
-                "khong the huy"
+                "Hồ sơ đang trong quá trình xử lý chuyên sâu, không thể hủy"
             ),
         )
 
-    if del_applied.status == ApplicationStatusEnum.withdrawn:
-        return None
-
-    _ensure_valid_application_status_transition(
-        del_applied.status,
-        ApplicationStatusEnum.withdrawn,
-    )
-    del_applied.status = ApplicationStatusEnum.withdrawn
-
+    db.delete(del_applied)
     db.commit()
-    db.refresh(del_applied)
-    return None
+    return True
 
 
 def create_ai_matching_score(db: Session, application_id: int, score_data: dict):
