@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_, func
 
 from app.core.enum import ApplicationStatusEnum, JobStatusEnum, RoleEnum
 from app.models.ai_matching_scores import AiMatchingScore
@@ -9,6 +10,7 @@ from app.models.candidate_profiles import CandidateProfile
 from app.models.companies import CompanyMember
 from app.models.job_posting import JobPosting
 from app.models.user import User
+from app.models.interview import Interview
 from app.schemas.application_schema import ApplicationCreate, ChangeStatusRequest
 
 
@@ -67,14 +69,27 @@ def create_application(db: Session, user_id: int, request_in: ApplicationCreate)
     if not job:
         raise HTTPException(
             status_code=404,
-            detail="Tin tuyen dung khong ton tai hoac da dong",
+            detail="Tin tuyển dụng không tồn tại hoặc đã đóng",
         )
 
     candidate = db.query(CandidateProfile).filter(
         CandidateProfile.user_id == user_id
     ).first()
     if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate profile chua ton tai")
+        raise HTTPException(status_code=404, detail="Candidate profile chưa tồn tại")
+
+    # Kiem tra xem ung vien da duoc nhan vao cong ty nay chua (va chua nghi viec)
+    hired_in_company = db.query(Application).join(JobPosting, Application.job_id == JobPosting.id).filter(
+        Application.candidate_id == candidate.id,
+        JobPosting.company_id == job.company_id,
+        Application.status == ApplicationStatusEnum.hired
+    ).first()
+
+    if hired_in_company:
+        raise HTTPException(
+            status_code=400,
+            detail="Bạn đang làm việc tại công ty này nên không thể ứng tuyển thêm.",
+        )
 
     applied_job = db.query(Application).filter(
         Application.candidate_id == candidate.id,
@@ -88,7 +103,7 @@ def create_application(db: Session, user_id: int, request_in: ApplicationCreate)
     }:
         raise HTTPException(
             status_code=400,
-            detail="Ban da nop ho so cho job nay roi",
+            detail="Bạn đã nộp hồ sơ cho công việc này.",
         )
 
     new_applied = Application(
@@ -112,7 +127,7 @@ def delete_application(db: Session, user_id: int, job_id: int):
     ).first()
 
     if not candidate_profile:
-        raise HTTPException(status_code=404, detail="Chua co profile")
+        raise HTTPException(status_code=404, detail="Chưa có profile")
 
     # Tìm đơn ứng tuyển mới nhất cho job này
     del_applied = db.query(Application).filter(
@@ -215,6 +230,7 @@ def list_candidates_applied_by_job(
         .options(
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.user),
             joinedload(Application.cv_uploads),
+            joinedload(Application.job_posting),
         )
         .filter(Application.job_id == job_id)
     )
@@ -268,3 +284,188 @@ def change_status(
     db.refresh(app)
 
     return app
+
+def list_hr_candidates(
+    db: Session,
+    hr_user_id: int,
+    page: int = 1,
+    page_size: int = 10,
+    job_id: int | None = None,
+    status: str | None = None,
+    search: str | None = None,
+):
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == hr_user_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Bạn chưa thuộc công ty nào")
+
+    query = (
+        db.query(Application)
+        .join(JobPosting, Application.job_id == JobPosting.id)
+        .options(
+            joinedload(Application.candidate_profile).joinedload(CandidateProfile.user),
+            joinedload(Application.cv_uploads),
+            joinedload(Application.job_posting),
+        )
+        .filter(JobPosting.company_id == member.company_id)
+    )
+
+    if job_id:
+        query = query.filter(Application.job_id == job_id)
+
+    if status and status != "all":
+        if status == "applied":
+            status = "pending"
+            
+        try:
+            enum_status = ApplicationStatusEnum(status)
+            query = query.filter(Application.status == enum_status)
+        except ValueError:
+            pass
+
+    if search:
+        search_term = f"%{search.lower()}%"
+        query = (
+            query.join(CandidateProfile, Application.candidate_id == CandidateProfile.id)
+            .join(User, CandidateProfile.user_id == User.id)
+            .outerjoin(CVUpload, Application.cv_upload_id == CVUpload.id)
+            .filter(
+                or_(
+                    CandidateProfile.full_name.ilike(search_term),
+                    User.email.ilike(search_term),
+                    CVUpload.file_name.ilike(search_term),
+                )
+            )
+        )
+
+    total = query.count()
+    offset = (page - 1) * page_size
+
+    applications = (
+        query.order_by(Application.applied_at.desc())
+        .offset(max(0, offset))
+        .limit(min(page_size, 100))
+        .all()
+    )
+
+    return applications, total
+
+def get_hr_candidates_stats(
+    db: Session,
+    hr_user_id: int,
+    job_id: int | None = None,
+):
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == hr_user_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Bạn chưa thuộc công ty nào")
+
+    query = (
+        db.query(Application.status, func.count(Application.id))
+        .join(JobPosting, Application.job_id == JobPosting.id)
+        .filter(JobPosting.company_id == member.company_id)
+    )
+
+    if job_id:
+        query = query.filter(Application.job_id == job_id)
+
+    stats_raw = query.group_by(Application.status).all()
+    
+    stats_dict = {status_enum.value: count for status_enum, count in stats_raw}
+    
+    total = sum(stats_dict.values())
+    
+    return {
+        "all": total,
+        "applied": stats_dict.get(ApplicationStatusEnum.pending.value, 0),
+        "interviewing": stats_dict.get(ApplicationStatusEnum.interviewing.value, 0),
+        "hired": stats_dict.get(ApplicationStatusEnum.hired.value, 0),
+        "rejected": stats_dict.get(ApplicationStatusEnum.rejected.value, 0),
+        "withdrawn": stats_dict.get(ApplicationStatusEnum.withdrawn.value, 0),
+        "left_company": stats_dict.get(ApplicationStatusEnum.left_company.value, 0),
+    }
+
+
+def get_application_detail(db: Session, user_id: int, job_id: int) -> dict:
+    candidate = db.query(CandidateProfile).filter(CandidateProfile.user_id == user_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng viên")
+
+    application = (
+        db.query(Application)
+        .options(
+            joinedload(Application.job_posting).joinedload(JobPosting.company),
+            joinedload(Application.job_posting).joinedload(JobPosting.creator),
+            joinedload(Application.interviews).joinedload(Interview.interviewer),
+        )
+        .filter(
+            Application.candidate_id == candidate.id,
+            Application.job_id == job_id,
+        )
+        .order_by(Application.applied_at.desc())
+        .first()
+    )
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn ứng tuyển")
+
+    res_data = {
+        "job_id": str(application.job_id),
+        "status": application.status.value,
+        "rejection_reason": None,
+        "rejected_at": None,
+        "interview_mode": None,
+        "interview_time": None,
+        "location": None,
+        "meeting_link": None,
+        "notes": None,
+        "hr_contact_name": None,
+        "hr_contact_email": None,
+        "hr_contact_phone": None,
+    }
+
+    company_name = application.job_posting.company.name if application.job_posting and application.job_posting.company else "Công ty"
+    hr_email = application.job_posting.creator.email if application.job_posting and application.job_posting.creator else "hr@company.com"
+
+    if application.status == ApplicationStatusEnum.rejected:
+        rejection_reason = getattr(application, 'rejection_reason', None)
+        if not rejection_reason:
+            rejection_reason = "Cảm ơn bạn đã quan tâm đến vị trí này. Tuy nhiên, sau khi xem xét kỹ lưỡng hồ sơ, chúng tôi nhận thấy kinh nghiệm hiện tại của bạn chưa hoàn toàn phù hợp với định hướng dự án sắp tới. Chúc bạn nhiều thành công trên con đường sự nghiệp!"
+        
+        rejected_at = getattr(application, 'rejected_at', None) or application.update_at
+        
+        res_data.update({
+            "rejection_reason": rejection_reason,
+            "rejected_at": rejected_at,
+            "hr_contact_name": f"Bộ phận Tuyển dụng - {company_name}",
+            "hr_contact_email": hr_email,
+        })
+    elif application.status in {ApplicationStatusEnum.interviewing, ApplicationStatusEnum.hired}:
+        interviews = application.interviews
+        if interviews:
+            interview = sorted(interviews, key=lambda i: i.interview_time, reverse=True)[0]
+            mode = "online" if interview.meeting_link else "offline"
+            interviewer_email = interview.interviewer.email if interview.interviewer else hr_email
+            
+            res_data.update({
+                "interview_mode": mode,
+                "interview_time": interview.interview_time,
+                "location": interview.location,
+                "meeting_link": interview.meeting_link,
+                "notes": interview.notes,
+                "hr_contact_name": f"Bộ phận Tuyển dụng - {company_name}",
+                "hr_contact_email": interviewer_email,
+                "hr_contact_phone": None,
+            })
+        else:
+            res_data.update({
+                "notes": "Lịch phỏng vấn đang được nhà tuyển dụng cập nhật.",
+                "hr_contact_name": f"Bộ phận Tuyển dụng - {company_name}",
+                "hr_contact_email": hr_email,
+            })
+    else:
+        res_data.update({
+            "notes": "Hồ sơ của bạn đã được tiếp nhận và đang trong quá trình đánh giá. Chúng tôi sẽ liên hệ lại qua Email hoặc Số điện thoại nếu hồ sơ phù hợp.",
+            "hr_contact_name": f"Bộ phận Tuyển dụng - {company_name}",
+            "hr_contact_email": hr_email,
+        })
+
+    return res_data

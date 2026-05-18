@@ -56,6 +56,7 @@ class JobDetailResponse(BaseModel):
     expired_at: datetime
     company: CompanyShortResponse
     has_applied: bool | None = None
+    application_status: str | None = None
     is_save:bool | None = None
 
     class Config:

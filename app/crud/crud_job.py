@@ -41,15 +41,37 @@ def get_list_job(
     db: Session,
     user_id: int,
     status: JobStatusEnum | None = None,
+    search: str | None = None,
     limit: int = 5,
     offset: int = 0,
 ):
     """Danh sách các job do HR tạo."""
 
-    query = db.query(JobPosting).filter(JobPosting.created_by == user_id)
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == user_id).first()
+    if member:
+        query = db.query(JobPosting).filter(
+            or_(
+                JobPosting.created_by == user_id,
+                JobPosting.company_id == member.company_id,
+            )
+        )
+    else:
+        query = db.query(JobPosting).filter(JobPosting.created_by == user_id)
 
     if status:
         query = query.filter(JobPosting.status == status)
+
+    if search and search.strip():
+        search_str = search.strip()
+        pattern = f"%{search_str.replace('%', r'\%').replace('_', r'\_')}%"
+        query = query.filter(
+            or_(
+                func.unaccent(JobPosting.title).ilike(func.unaccent(pattern), escape="\\"),
+                func.unaccent(JobPosting.location).ilike(func.unaccent(pattern), escape="\\"),
+                func.unaccent(func.cast(JobPosting.tags, String)).ilike(func.unaccent(pattern), escape="\\"),
+                func.unaccent(JobPosting.requirements).ilike(func.unaccent(pattern), escape="\\"),
+            )
+        )
 
     total = query.count()
 
@@ -73,6 +95,7 @@ def get_public_jobs(
     candidate_exp: int | None = None,
     limit: int = 20,
     offset: int = 0,
+    user_id: int | None = None,
 ):
     """Tìm kiếm các job public với nhiều tiêu chí."""
 
@@ -129,6 +152,15 @@ def get_public_jobs(
         .limit(min(limit, 100))
         .all()
     )
+
+    if user_id and jobs:
+        saved_job_ids = db.query(SaveJob.job_id).join(CandidateProfile).filter(
+            CandidateProfile.user_id == user_id,
+            SaveJob.job_id.in_([j.id for j in jobs])
+        ).all()
+        saved_ids_set = {r[0] for r in saved_job_ids}
+        for job in jobs:
+            job.is_save = job.id in saved_ids_set
 
     return jobs, total
 
@@ -237,7 +269,7 @@ def update_job_crud(db: Session, job_id: int, job: JobPostingUpdate, user_id: in
     return job_db
 
 
-def get_proposed_jobs(db: Session, offset: int = 0, limit: int = 20):
+def get_proposed_jobs(db: Session, user_id: int | None = None, offset: int = 0, limit: int = 20):
     """Lấy danh sách job mới nhất để hiển thị."""
     query = db.query(JobPosting).filter(JobPosting.status == JobStatusEnum.published)
     total = query.count()
@@ -249,6 +281,18 @@ def get_proposed_jobs(db: Session, offset: int = 0, limit: int = 20):
         .limit(limit)
         .all()
     )
+
+    if user_id and jobs:
+        # Lấy danh sách ID các job mà user này đã lưu
+        saved_job_ids = db.query(SaveJob.job_id).join(CandidateProfile).filter(
+            CandidateProfile.user_id == user_id,
+            SaveJob.job_id.in_([j.id for j in jobs])
+        ).all()
+        
+        saved_ids_set = {r[0] for r in saved_job_ids}
+        
+        for job in jobs:
+            job.is_save = job.id in saved_ids_set
 
     return jobs, total
 
@@ -306,6 +350,15 @@ def get_job_match_cv(
         .all()
     )
 
+    if jobs:
+        saved_job_ids = db.query(SaveJob.job_id).join(CandidateProfile).filter(
+            CandidateProfile.user_id == current_user.id,
+            SaveJob.job_id.in_([j.id for j in jobs])
+        ).all()
+        saved_ids_set = {r[0] for r in saved_job_ids}
+        for job in jobs:
+            job.is_save = job.id in saved_ids_set
+
     return jobs, total
 
 def is_save(db: Session, job_id: int, user_id: int):
@@ -331,12 +384,13 @@ def get_job_by_id(db: Session, job_id: int, user_id: int | None):
 
     applied = False
     save = False
+    app_status = None
 
     if user_id:
-        applied = has_applied(db, user_id, job_id)
+        applied, app_status = has_applied(db, user_id, job_id)
         save = is_save(db, job_id, user_id)
 
-    return job, applied, save
+    return job, applied, save, app_status
 
 
 def delete_job(db: Session, job_id: int):
@@ -357,14 +411,17 @@ def has_applied(db: Session, user_id: int, job_id: int):
     ).first()
 
     if not profile:
-        return False
+        return False, None
 
     application = db.query(Application).filter(
         Application.candidate_id == profile.id,
         Application.job_id == job_id,
-    ).first()
+    ).order_by(Application.applied_at.desc()).first()
 
-    return application is not None
+    if application:
+        return True, application.status.value
+    
+    return False, None
 
 
 def list_save_job(db: Session, user_id: int):

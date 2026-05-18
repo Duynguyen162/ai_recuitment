@@ -39,9 +39,47 @@ class CandidateAppliedResponse(BaseModel):
     cv_id: int | None = None
     cv_name: str | None = None
     cv_url: str | None = None
+    job_title: str | None = None
 
     class Config:
         from_attributes = True
 
 class ChangeStatusRequest(BaseModel):
     status: ApplicationStatusEnum
+
+class PaginatedCandidatesResponse(BaseModel):
+    data: List[CandidateAppliedResponse]
+    total: int
+
+class CandidatesStatsResponse(BaseModel):
+    all: int
+    applied: int
+    interviewing: int
+    hired: int
+    rejected: int
+    left_company: int
+
+class InterviewDetailResponse(BaseModel):
+    interview_time: datetime
+    location: str | None = None
+    meeting_link: str | None = None
+    mode: str
+    notes: str | None = None
+
+
+class ApplicationDetailResponse(BaseModel):
+    job_id: str
+    status: str
+    rejection_reason: str | None = None
+    rejected_at: datetime | None = None
+    interview_mode: str | None = None
+    interview_time: datetime | None = None
+    location: str | None = None
+    meeting_link: str | None = None
+    notes: str | None = None
+    hr_contact_name: str | None = None
+    hr_contact_email: str | None = None
+    hr_contact_phone: str | None = None
+
+    class Config:
+        from_attributes = True

@@ -16,6 +16,10 @@ from app.schemas.application_schema import (
     ApplicationResponse,
     CandidateAppliedResponse,
     ChangeStatusRequest,
+    PaginatedCandidatesResponse,
+    CandidatesStatsResponse,
+    InterviewDetailResponse,
+    ApplicationDetailResponse,
 )
 from app.schemas.base_schema import ResponseSchema
 
@@ -179,6 +183,7 @@ def get_list_candidate_apply_by_job(
             cv_id=application.cv_upload_id,
             cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
             cv_url=f"{settings.BASE_URL}/{application.cv_uploads.file_url}" if application.cv_uploads else None,
+            job_title=application.job_posting.title if application.job_posting else None,
         )
         for application in applications
     ]
@@ -259,3 +264,152 @@ def change_status(
         error=None,
         meta=None,
     )
+
+
+@router.get(
+    "/hr/candidates",
+    response_model=PaginatedCandidatesResponse,
+    tags=["HR Applications"],
+    summary="HR lấy danh sách các ứng viên đã apply vào công ty",
+)
+def get_hr_candidates(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    job_id: int | None = Query(None),
+    status: str | None = Query(None),
+    search: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ HR mới có thể sử dụng chức năng này",
+        )
+
+    applications, total = crud_application.list_hr_candidates(
+        db=db,
+        hr_user_id=current_user.id,
+        page=page,
+        page_size=page_size,
+        job_id=job_id,
+        status=status,
+        search=search,
+    )
+
+    data = [
+        CandidateAppliedResponse(
+            application_id=application.id,
+            candidate_id=application.candidate_profile.id,
+            full_name=application.candidate_profile.full_name,
+            email=application.candidate_profile.user.email,
+            phone=application.candidate_profile.phone,
+            avatar_url=application.candidate_profile.avatar_url,
+            years_of_experience=application.candidate_profile.years_of_experience,
+            skill_tags=application.candidate_profile.skill_tags or [],
+            status=application.status.value,
+            applied_at=application.applied_at,
+            cv_id=application.cv_upload_id,
+            cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
+            cv_url=f"{settings.BASE_URL}/{application.cv_uploads.file_url}" if application.cv_uploads else None,
+            job_title=application.job_posting.title if application.job_posting else None,
+        )
+        for application in applications
+    ]
+
+    return PaginatedCandidatesResponse(
+        data=data,
+        total=total,
+    )
+
+
+@router.get(
+    "/hr/candidates/stats",
+    response_model=CandidatesStatsResponse,
+    tags=["HR Applications"],
+    summary="HR lay thong ke so luong ung vien",
+)
+def get_hr_candidates_stats(
+    job_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(
+            status_code=403,
+            detail="Chi HR moi co the dung chuc nang nay",
+        )
+
+    stats = crud_application.get_hr_candidates_stats(
+        db=db,
+        hr_user_id=current_user.id,
+        job_id=job_id,
+    )
+
+    return CandidatesStatsResponse(**stats)
+
+
+@router.get(
+    "/candidate/{application_id}/interview",
+    response_model=ResponseSchema[InterviewDetailResponse],
+    tags=["Candidate Jobs"],
+    summary="Ứng viên xem chi tiết lịch phỏng vấn",
+)
+def get_candidate_interview(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.crud import crud_interview
+    
+    if current_user.role != RoleEnum.candidate:
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ ứng viên mới xem được thông tin này",
+        )
+    
+    interviews = crud_interview.list_interviews_by_application(db, current_user, application_id)
+    if not interviews:
+        raise HTTPException(status_code=404, detail="Chưa có lịch phỏng vấn")
+        
+    interview = interviews[0]
+    
+    mode = "online" if interview.meeting_link else "offline"
+    
+    data = InterviewDetailResponse(
+        interview_time=interview.interview_time,
+        location=interview.location,
+        meeting_link=interview.meeting_link,
+        mode=mode,
+        notes=interview.notes,
+    )
+    
+    return ResponseSchema(success=True, data=data)
+
+
+@router.get(
+    "/get_application_detail",
+    response_model=ResponseSchema[ApplicationDetailResponse],
+    tags=["Candidate Jobs"],
+    summary="Ứng viên lấy thông tin chi tiết lịch hẹn phỏng vấn hoặc lý do từ chối",
+)
+def get_application_detail_endpoint(
+    job_id: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.candidate:
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ ứng viên mới xem được thông tin này",
+        )
+
+    detail_data = crud_application.get_application_detail(db, current_user.id, job_id)
+
+    return ResponseSchema(
+        success=True,
+        data=ApplicationDetailResponse(**detail_data),
+        error=None,
+        meta=None,
+    )
+
