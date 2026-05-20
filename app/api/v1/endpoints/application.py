@@ -20,8 +20,16 @@ from app.schemas.application_schema import (
     CandidatesStatsResponse,
     InterviewDetailResponse,
     ApplicationDetailResponse,
+    CandidateProfileForHrResponse,
+    AiScoreStatusResponse,
+    AiRequeueResponse,
 )
 from app.schemas.base_schema import ResponseSchema
+from app.services.ai_matching import (
+    enqueue_ai_matching_job,
+    enqueue_and_process_ai_matching,
+    process_ai_matching_queue,
+)
 
 router = APIRouter()
 
@@ -73,7 +81,7 @@ def get_apply_job(
     "/apply_job",
     response_model=ResponseSchema[ApplicationResponse],
     tags=["Candidate Jobs"],
-    summary="Ung vien apply vao job",
+    summary="Ứng viên apply vào job",
 )
 def apply_for_job(
     request_in: ApplicationCreate,
@@ -81,18 +89,17 @@ def apply_for_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Ung vien nop don ung tuyen vao 1 job."""
+    """Ứng viên nộp đơn ứng tuyển vào 1 job."""
     if current_user.role != RoleEnum.candidate:
         raise HTTPException(
             status_code=403,
-            detail="Chi ung vien moi duoc ung tuyen",
+            detail="Chỉ ứng viên mới được ứng tuyển",
         )
 
     new_applied = crud_application.create_application(db, current_user.id, request_in)
 
-    # AI phan tich se chay ngam
-    # background_tasks.add_task(run_ai_matching, new_applied.id)
-    _ = background_tasks
+    # AI matching chay ngam qua queue de tranh block API apply
+    background_tasks.add_task(enqueue_and_process_ai_matching, new_applied.id)
 
     return ResponseSchema(
         success=True,
@@ -179,6 +186,7 @@ def get_list_candidate_apply_by_job(
             years_of_experience=application.candidate_profile.years_of_experience,
             skill_tags=application.candidate_profile.skill_tags or [],
             status=application.status.value,
+            cv_type=application.cv_type,
             applied_at=application.applied_at,
             cv_id=application.cv_upload_id,
             cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
@@ -308,6 +316,7 @@ def get_hr_candidates(
             years_of_experience=application.candidate_profile.years_of_experience,
             skill_tags=application.candidate_profile.skill_tags or [],
             status=application.status.value,
+            cv_type=application.cv_type,
             applied_at=application.applied_at,
             cv_id=application.cv_upload_id,
             cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
@@ -327,7 +336,7 @@ def get_hr_candidates(
     "/hr/candidates/stats",
     response_model=CandidatesStatsResponse,
     tags=["HR Applications"],
-    summary="HR lay thong ke so luong ung vien",
+    summary="HR lấy thống kê số lượng ứng viên",
 )
 def get_hr_candidates_stats(
     job_id: int | None = Query(None),
@@ -337,7 +346,7 @@ def get_hr_candidates_stats(
     if current_user.role != RoleEnum.hr_manager:
         raise HTTPException(
             status_code=403,
-            detail="Chi HR moi co the dung chuc nang nay",
+            detail="Chỉ HR mới có thể dùng chức năng này",
         )
 
     stats = crud_application.get_hr_candidates_stats(
@@ -347,6 +356,137 @@ def get_hr_candidates_stats(
     )
 
     return CandidatesStatsResponse(**stats)
+
+
+@router.get(
+    "/hr/{application_id}/candidate_profile",
+    response_model=ResponseSchema[CandidateProfileForHrResponse],
+    tags=["HR Applications"],
+    summary="HR xem profile đầy đủ của ứng viên theo đơn ứng tuyển",
+)
+def get_candidate_profile_by_application_for_hr(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ HR mới có thể dùng chức năng này",
+        )
+
+    profile_data = crud_application.get_candidate_profile_by_application_for_hr(
+        db=db,
+        hr_user_id=current_user.id,
+        application_id=application_id,
+    )
+
+    return ResponseSchema(
+        success=True,
+        data=CandidateProfileForHrResponse(**profile_data),
+        error=None,
+        meta=None,
+    )
+
+
+@router.get(
+    "/hr/{application_id}/ai_score_status",
+    response_model=ResponseSchema[AiScoreStatusResponse],
+    tags=["HR Applications"],
+    summary="HR xem trang thai cham diem AI theo application",
+)
+def get_ai_score_status_for_hr(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(
+            status_code=403,
+            detail="Chi HR moi co the dung chuc nang nay",
+        )
+
+    data = crud_application.get_ai_score_status_for_hr(
+        db=db,
+        hr_user_id=current_user.id,
+        application_id=application_id,
+    )
+
+    return ResponseSchema(success=True, data=AiScoreStatusResponse(**data), error=None, meta=None)
+
+
+@router.post(
+    "/hr/{application_id}/ai-score/requeue",
+    response_model=ResponseSchema[AiRequeueResponse],
+    tags=["HR Applications"],
+    summary="HR yeu cau cham lai AI cho 1 application",
+)
+def requeue_ai_score_for_application_by_hr(
+    application_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(status_code=403, detail="Chi HR moi co the dung chuc nang nay")
+
+    application = crud_application.validate_hr_can_access_application(
+        db=db,
+        hr_user_id=current_user.id,
+        application_id=application_id,
+    )
+    enqueue_ai_matching_job(application.id)
+    background_tasks.add_task(process_ai_matching_queue, 1)
+
+    return ResponseSchema(
+        success=True,
+        data=AiRequeueResponse(queued_count=1, skipped_count=0, application_ids=[application.id]),
+        error=None,
+        meta=None,
+    )
+
+
+@router.post(
+    "/hr/candidates/{candidate_id}/ai-score/requeue",
+    response_model=ResponseSchema[AiRequeueResponse],
+    tags=["HR Applications"],
+    summary="HR requeue cham diem AI cho cac don cua 1 ung vien",
+)
+def requeue_ai_score_for_candidate_by_hr(
+    candidate_id: int,
+    only_missing_score: bool = True,
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(status_code=403, detail="Chi HR moi co the dung chuc nang nay")
+
+    application_ids = crud_application.list_hr_candidate_application_ids_for_requeue(
+        db=db,
+        hr_user_id=current_user.id,
+        candidate_id=candidate_id,
+        only_missing_score=only_missing_score,
+    )
+
+    queued = 0
+    for app_id in application_ids:
+        enqueue_ai_matching_job(app_id)
+        queued += 1
+
+    if queued > 0 and background_tasks is not None:
+        background_tasks.add_task(process_ai_matching_queue, min(queued, 10))
+
+    return ResponseSchema(
+        success=True,
+        data=AiRequeueResponse(
+            queued_count=queued,
+            skipped_count=0,
+            application_ids=application_ids,
+        ),
+        error=None,
+        meta={"only_missing_score": only_missing_score},
+    )
 
 
 @router.get(
@@ -412,4 +552,3 @@ def get_application_detail_endpoint(
         error=None,
         meta=None,
     )
-

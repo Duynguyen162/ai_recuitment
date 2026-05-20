@@ -2,8 +2,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 
-from app.core.enum import ApplicationStatusEnum, JobStatusEnum, RoleEnum
+from app.core.enum import ApplicationStatusEnum, CvTypeEnum, JobStatusEnum, RoleEnum
 from app.models.ai_matching_scores import AiMatchingScore
+from app.models.ai_matching_jobs import AiMatchingJob
 from app.models.applications import Application
 from app.models.candidate_details import CVUpload
 from app.models.candidate_profiles import CandidateProfile
@@ -106,11 +107,30 @@ def create_application(db: Session, user_id: int, request_in: ApplicationCreate)
             detail="Bạn đã nộp hồ sơ cho công việc này.",
         )
 
+    cv_upload_id = request_in.cv_id
+    if request_in.cv_type == CvTypeEnum.profile:
+        cv_upload_id = None
+    else:
+        if not cv_upload_id:
+            raise HTTPException(
+                status_code=422,
+                detail="cv_id là bắt buộc khi cv_type='uploaded_cv'",
+            )
+        cv_record = db.query(CVUpload).filter(
+            CVUpload.id == cv_upload_id,
+            CVUpload.candidate_id == candidate.id,
+        ).first()
+        if not cv_record:
+            raise HTTPException(
+                status_code=404,
+                detail="CV upload không tồn tại hoặc không thuộc về ứng viên",
+            )
+
     new_applied = Application(
         job_id=request_in.job_id,
         candidate_id=candidate.id,
         cv_type=request_in.cv_type,
-        cv_upload_id=request_in.cv_id,
+        cv_upload_id=cv_upload_id,
     )
 
     db.add(new_applied)
@@ -161,6 +181,19 @@ def delete_application(db: Session, user_id: int, job_id: int):
 
 def create_ai_matching_score(db: Session, application_id: int, score_data: dict):
     """Luu ket qua cham diem cua AI vao database."""
+    existing = db.query(AiMatchingScore).filter(
+        AiMatchingScore.application_id == application_id
+    ).first()
+
+    if existing:
+        existing.score = score_data.get("score")
+        existing.strengths = score_data.get("strengths", [])
+        existing.weaknesses = score_data.get("weaknesses", [])
+        existing.explanation = score_data.get("explanation")
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     new_score = AiMatchingScore(
         application_id=application_id,
         score=score_data.get("score"),
@@ -469,3 +502,197 @@ def get_application_detail(db: Session, user_id: int, job_id: int) -> dict:
         })
 
     return res_data
+
+
+def get_candidate_profile_by_application_for_hr(
+    db: Session,
+    hr_user_id: int,
+    application_id: int,
+) -> dict:
+    member = db.query(CompanyMember).filter(
+        CompanyMember.user_id == hr_user_id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Ban chua thuoc cong ty nao")
+
+    application = (
+        db.query(Application)
+        .join(JobPosting, Application.job_id == JobPosting.id)
+        .options(
+            joinedload(Application.candidate_profile).joinedload(CandidateProfile.user),
+            joinedload(Application.candidate_profile).joinedload(CandidateProfile.experiences),
+            joinedload(Application.candidate_profile).joinedload(CandidateProfile.educations),
+            joinedload(Application.candidate_profile).joinedload(CandidateProfile.certifications),
+        )
+        .filter(
+            Application.id == application_id,
+            JobPosting.company_id == member.company_id,
+        )
+        .first()
+    )
+
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Khong tim thay don ung tuyen hoac ban khong co quyen truy cap",
+        )
+
+    if application.cv_type != CvTypeEnum.profile:
+        raise HTTPException(
+            status_code=400,
+            detail="Don ung tuyen nay khong su dung profile, vui long xem CV upload",
+        )
+
+    profile = application.candidate_profile
+    if not profile or not profile.user:
+        raise HTTPException(status_code=404, detail="Khong tim thay du lieu ung vien")
+
+    return {
+        "full_name": profile.full_name,
+        "email": profile.user.email,
+        "phone": profile.phone,
+        "address": None,
+        "date_of_birth": None,
+        "summary": profile.bio,
+        "skills": profile.skill_tags or [],
+        "experiences": [
+            {
+                "company_name": exp.company_name,
+                "job_title": exp.job_title,
+                "description": exp.description,
+            }
+            for exp in (profile.experiences or [])
+        ],
+        "educations": [
+            {
+                "institution_name": edu.institution_name,
+                "major": edu.major,
+                "degree": edu.degree,
+            }
+            for edu in (profile.educations or [])
+        ],
+        "certifications": [
+            {
+                "name": cert.name,
+                "issuer": cert.issuer,
+            }
+            for cert in (profile.certifications or [])
+        ],
+    }
+
+
+def get_ai_score_status_for_hr(
+    db: Session,
+    hr_user_id: int,
+    application_id: int,
+) -> dict:
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == hr_user_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Ban chua thuoc cong ty nao")
+
+    application = (
+        db.query(Application)
+        .join(JobPosting, Application.job_id == JobPosting.id)
+        .filter(
+            Application.id == application_id,
+            JobPosting.company_id == member.company_id,
+        )
+        .first()
+    )
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Khong tim thay don ung tuyen hoac ban khong co quyen truy cap",
+        )
+
+    score = db.query(AiMatchingScore).filter(
+        AiMatchingScore.application_id == application_id
+    ).first()
+    if score:
+        return {
+            "application_id": application_id,
+            "status": "done",
+            "score": float(score.score) if score.score is not None else None,
+            "strengths": score.strengths or [],
+            "weaknesses": score.weaknesses or [],
+            "explanation": score.explanation,
+            "error_message": None,
+        }
+
+    queue_job = db.query(AiMatchingJob).filter(
+        AiMatchingJob.application_id == application_id
+    ).first()
+    if not queue_job:
+        return {
+            "application_id": application_id,
+            "status": "not_queued",
+            "score": None,
+            "strengths": [],
+            "weaknesses": [],
+            "explanation": None,
+            "error_message": None,
+        }
+
+    return {
+        "application_id": application_id,
+        "status": queue_job.status.value,
+        "score": None,
+        "strengths": [],
+        "weaknesses": [],
+        "explanation": None,
+        "error_message": queue_job.error_message,
+    }
+
+
+def validate_hr_can_access_application(
+    db: Session,
+    hr_user_id: int,
+    application_id: int,
+) -> Application:
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == hr_user_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Ban chua thuoc cong ty nao")
+
+    application = (
+        db.query(Application)
+        .join(JobPosting, Application.job_id == JobPosting.id)
+        .filter(
+            Application.id == application_id,
+            JobPosting.company_id == member.company_id,
+        )
+        .first()
+    )
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Khong tim thay don ung tuyen hoac ban khong co quyen truy cap",
+        )
+    return application
+
+
+def list_hr_candidate_application_ids_for_requeue(
+    db: Session,
+    hr_user_id: int,
+    candidate_id: int,
+    only_missing_score: bool = True,
+) -> list[int]:
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == hr_user_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Ban chua thuoc cong ty nao")
+
+    query = (
+        db.query(Application.id)
+        .join(JobPosting, Application.job_id == JobPosting.id)
+        .filter(
+            Application.candidate_id == candidate_id,
+            JobPosting.company_id == member.company_id,
+        )
+    )
+
+    if only_missing_score:
+        query = query.outerjoin(
+            AiMatchingScore,
+            AiMatchingScore.application_id == Application.id,
+        ).filter(AiMatchingScore.id.is_(None))
+
+    return [row[0] for row in query.all()]

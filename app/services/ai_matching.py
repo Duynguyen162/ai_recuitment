@@ -1,12 +1,29 @@
-# app/services/ai_matching.py
+import hashlib
 import json
 import os
+import socket
+from datetime import datetime, timedelta, timezone
+
 import google.generativeai as genai
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import joinedload
+from sqlalchemy.exc import IntegrityError
+
+from app.core.enum import AiMatchingJobStatusEnum, CvTypeEnum, ParseStatusEnum
 from app.crud import crud_application
 from app.db.database import SessionLocal
+from app.models.ai_matching_cache import AiMatchingCache
+from app.models.ai_matching_jobs import AiMatchingJob
 from app.models.applications import Application
+from app.models.candidate_details import CVUpload
 from app.models.candidate_profiles import CandidateProfile
+from app.models.parsed_cv_data import ParsedCVData
+from app.core.logger import logger
+
+PARSER_VERSION = "gemini_cv_parser_v1"
+WORKER_ID = f"{socket.gethostname()}-pid-{os.getpid()}"
+MAX_RETRIES = 5
+
 
 class GeminiKeyManager:
     def __init__(self, filepath="secrets/gemini_keys.txt"):
@@ -15,138 +32,448 @@ class GeminiKeyManager:
         self.current_index = 0
 
     def _load_keys(self):
-        # Đọc các dòng, bỏ dòng trống và xóa khoảng trắng thừa
         if not os.path.exists(self.filepath):
-            raise FileNotFoundError(f"Không tìm thấy file {self.filepath}. Hãy tạo thư mục secrets và file này.")
-        with open(self.filepath, "r") as f:
+            raise FileNotFoundError(f"Khong tim thay file {self.filepath}")
+        with open(self.filepath, "r", encoding="utf-8") as f:
             keys = [line.strip() for line in f if line.strip()]
         if not keys:
-            raise ValueError(f"File {self.filepath} đang trống! Hãy điền API Key vào.")
-        print(f"Đã nạp thành công {len(keys)} API Keys vào hệ thống.")
+            raise ValueError(f"File {self.filepath} dang trong")
         return keys
 
     def get_current_key(self):
         return self.keys[self.current_index]
 
     def rotate_key(self):
-        """Chuyển sang key tiếp theo, nếu hết thì quay lại từ đầu"""
         self.current_index = (self.current_index + 1) % len(self.keys)
-        print(f"[Key Manager] Đã xoay vòng sang API Key số {self.current_index + 1}...")
-
-# Khởi tạo đối tượng quản lý Key (Chỉ khởi tạo 1 lần khi server chạy)
-key_manager = GeminiKeyManager()
 
 
-def run_ai_matching(application_id: int):
+key_manager: GeminiKeyManager | None = None
+
+
+def _get_key_manager() -> GeminiKeyManager:
+    global key_manager
+    if key_manager is None:
+        key_manager = GeminiKeyManager()
+    return key_manager
+
+
+def _canonicalize_json(data: dict | None) -> str:
+    if not data:
+        return ""
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _fingerprint(parsed_json: dict | None, raw_text: str | None) -> str:
+    base = _canonicalize_json(parsed_json) or (raw_text or "")
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+def _is_retryable_error(error_msg: str) -> bool:
+    msg = error_msg.lower()
+    return any(key in msg for key in ["429", "quota", "exhausted", "limit", "timeout", "temporar", "connection", "network"])
+
+
+def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash") -> dict:
+    manager = _get_key_manager()
+    max_retries = len(manager.keys)
+    last_error = None
+    for _ in range(max_retries):
+        try:
+            genai.configure(api_key=manager.get_current_key())
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                ),
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            last_error = e
+            error_msg = str(e).lower()
+            if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg or "limit" in error_msg:
+                manager.rotate_key()
+                continue
+            raise
+    raise RuntimeError(f"Khong the goi Gemini voi tat ca API key: {last_error}")
+
+
+def _build_profile_raw_text_and_json(candidate: CandidateProfile) -> tuple[str, dict]:
+    exp_items = [
+        {
+            "company_name": exp.company_name,
+            "job_title": exp.job_title,
+            "description": exp.description or "",
+        }
+        for exp in candidate.experiences
+    ]
+    edu_items = [
+        {
+            "institution_name": edu.institution_name,
+            "major": edu.major,
+            "degree": edu.degree,
+        }
+        for edu in candidate.educations
+    ]
+    cert_items = [
+        {
+            "name": cert.name,
+            "issuer": cert.issuer,
+        }
+        for cert in candidate.certifications
+    ]
+
+    raw_text_parts = [
+        f"Ho ten: {candidate.full_name or ''}",
+        f"Gioi thieu: {candidate.bio or ''}",
+        f"Ky nang: {', '.join(candidate.skill_tags or [])}",
+        "Kinh nghiem:",
+    ]
+    raw_text_parts.extend(
+        [f"- {it['job_title']} tai {it['company_name']}: {it['description']}" for it in exp_items]
+        or ["- Khong co"]
+    )
+    raw_text_parts.append("Hoc van:")
+    raw_text_parts.extend(
+        [f"- {it['degree']} {it['major']} tai {it['institution_name']}" for it in edu_items]
+        or ["- Khong co"]
+    )
+    raw_text_parts.append("Chung chi:")
+    raw_text_parts.extend([f"- {it['name']} ({it['issuer']})" for it in cert_items] or ["- Khong co"])
+
+    parsed_json = {
+        "full_name": candidate.full_name or "",
+        "bio": candidate.bio or "",
+        "skills": candidate.skill_tags or [],
+        "experiences": exp_items,
+        "educations": edu_items,
+        "certifications": cert_items,
+    }
+    return "\n".join(raw_text_parts).strip(), parsed_json
+
+
+def _extract_pdf_text(file_path: str) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(file_path)
+    return "\n".join([(page.extract_text() or "") for page in reader.pages]).strip()
+
+
+def _parse_uploaded_cv_to_json(raw_text: str) -> dict:
+    parse_prompt = f"""
+    Ban la he thong parser CV. Hay chuyen van ban CV thanh JSON sach de AI matching doc.
+    Tra ve JSON dung schema sau va KHONG co text khac:
+    {{
+      "full_name": "string",
+      "bio": "string",
+      "skills": ["string"],
+      "experiences": [{{"company_name":"string","job_title":"string","description":"string"}}],
+      "educations": [{{"institution_name":"string","major":"string","degree":"string"}}],
+      "certifications": [{{"name":"string","issuer":"string"}}]
+    }}
+    Neu thieu thong tin, tra ve chuoi rong hoac mang rong.
+
+    CV TEXT:
+    {raw_text}
+    """
+    return _gemini_json_response(parse_prompt)
+
+
+def _upsert_parsed_cv_data(db, application: Application, include_ai_parse: bool) -> ParsedCVData:
+    existing = db.query(ParsedCVData).filter(ParsedCVData.application_id == application.id).first()
+    candidate = application.candidate_profile
+
+    if application.cv_type == CvTypeEnum.profile:
+        raw_text, parsed_json = _build_profile_raw_text_and_json(candidate)
+        parse_status = ParseStatusEnum.success
+        source_type = CvTypeEnum.profile
+    else:
+        cv = db.query(CVUpload).filter(
+            CVUpload.id == application.cv_upload_id,
+            CVUpload.candidate_id == application.candidate_id,
+        ).first()
+        if not cv:
+            raise ValueError("Khong tim thay CV upload de parse")
+        raw_text = _extract_pdf_text(cv.file_url)
+        if include_ai_parse:
+            parsed_json = _parse_uploaded_cv_to_json(raw_text)
+            parse_status = ParseStatusEnum.success
+        else:
+            parsed_json = None
+            parse_status = ParseStatusEnum.pending
+        source_type = CvTypeEnum.uploaded_cv
+
+    content_hash = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest() if raw_text else None
+    if existing:
+        existing.candidate_id = application.candidate_id
+        existing.source_type = source_type
+        existing.parse_status = parse_status if include_ai_parse or source_type == CvTypeEnum.profile else existing.parse_status
+        if parsed_json is not None:
+            existing.parsed_json = parsed_json
+        existing.raw_text_snapshot = raw_text
+        existing.parser_version = PARSER_VERSION
+        existing.content_hash = content_hash
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    row = ParsedCVData(
+        application_id=application.id,
+        candidate_id=application.candidate_id,
+        source_type=source_type,
+        parse_status=parse_status,
+        parsed_json=parsed_json,
+        raw_text_snapshot=raw_text,
+        parser_version=PARSER_VERSION,
+        content_hash=content_hash,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _score_prompt(job, parsed_json: dict) -> str:
+    return f"""
+    Ban la chuyen gia tuyen dung. Hay cham diem do phu hop giua CV da parse va Job.
+    [JOB]
+    - Tieu de: {job.title}
+    - Tags: {job.tags}
+    - Requirements: {job.requirements}
+    [CV_JSON]
+    {json.dumps(parsed_json, ensure_ascii=False)}
+    Tra ve JSON duy nhat:
+    {{
+        "score": <0-100>,
+        "strengths": ["..."],
+        "weaknesses": ["..."],
+        "explanation": "..."
+    }}
+    Bat buoc tieng Viet.
+    """
+
+
+def _copy_cache_to_application_score(db, application_id: int, cache: AiMatchingCache):
+    score_data = {
+        "score": cache.score,
+        "strengths": cache.strengths or [],
+        "weaknesses": cache.weaknesses or [],
+        "explanation": cache.explanation,
+    }
+    crud_application.create_ai_matching_score(db, application_id, score_data)
+
+
+def enqueue_ai_matching_job(application_id: int) -> None:
     db = SessionLocal()
     try:
         app_record = db.query(Application).options(
             joinedload(Application.job_posting),
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.experiences),
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.educations),
-            joinedload(Application.candidate_profile).joinedload(CandidateProfile.certifications)
+            joinedload(Application.candidate_profile).joinedload(CandidateProfile.certifications),
         ).filter(Application.id == application_id).first()
-
         if not app_record:
+            logger.warning(f"[AI_MATCH] application_id={application_id} not found, skip enqueue")
             return
-            
-        job = app_record.job_posting
-        candidate = app_record.candidate_profile
 
-        # 2. RÚT TRÍCH VÀ ĐỊNH DẠNG DỮ LIỆU THÀNH CHUỖI TEXT CHO AI ĐỌC DỄ DÀNG
-        # Chuyển list object thành các dòng text
-        exp_text = "\n".join([f"- {exp.job_title} tại {exp.company_name}: {exp.description}" for exp in candidate.experiences]) or "Không có thông tin kinh nghiệm."
-        edu_text = "\n".join([f"- {edu.degree} chuyên ngành {edu.major} tại {edu.institution_name}" for edu in candidate.educations]) or "Không có thông tin học vấn."
-        cert_text = "\n".join([f"- {cert.name} (Cấp bởi: {cert.issuer})" for cert in candidate.certifications]) or "Không có chứng chỉ."
-        tags_text = ", ".join(candidate.skill_tags) if candidate.skill_tags else "Chưa cập nhật kỹ năng"
+        parsed = _upsert_parsed_cv_data(db, app_record, include_ai_parse=False)
+        cv_fingerprint = _fingerprint(parsed.parsed_json, parsed.raw_text_snapshot)
 
-        prompt = f"""
-        Bạn là một chuyên gia Tuyển dụng Nhân sự (HR) cấp cao. Hãy phân tích mức độ phù hợp của Hồ sơ Ứng viên so với Yêu cầu Công việc.
-        
-        [YÊU CẦU CÔNG VIỆC]
-        - Tiêu đề: {job.title}
-        - Từ khóa kỹ năng: {job.tags}
-        - Yêu cầu chi tiết: {job.requirements}
-        
-        [HỒ SƠ ỨNG VIÊN]
-        - Tên ứng viên: {candidate.full_name}
-        - Giới thiệu bản thân: {candidate.bio}
-        - Từ khóa kỹ năng ứng viên có: {tags_text}
-        
-        * KINH NGHIỆM LÀM VIỆC:
-        {exp_text}
-        
-        * HỌC VẤN:
-        {edu_text}
-        
-        * CHỨNG CHỈ:
-        {cert_text}
-        
-        [NHIỆM VỤ]
-        Dựa trên thông tin trên, hãy chấm điểm độ khớp (0-100) và phân tích điểm mạnh, điểm yếu của ứng viên đối với CÔNG VIỆC NÀY.
-        
-        BẠN BẮT BUỘC TRẢ VỀ DỮ LIỆU ĐỊNH DẠNG JSON NHƯ SAU, KHÔNG CÓ BẤT KỲ VĂN BẢN NÀO KHÁC:
-        {{
-            "score": <số thập phân từ 0 đến 100>,
-            "strengths": ["Điểm mạnh 1", "Điểm mạnh 2"],
-            "weaknesses": ["Điểm thiếu hụt 1", "Điểm thiếu hụt 2"],
-            "explanation": "<Đoạn văn ngắn (khoảng 2-3 câu) tóm tắt lý do chấm điểm>"
-        }}
-        CÂU TRẢ LỜI BẮT BUỘC PHẢI VIẾT TIẾNG VIỆT.
-        """
+        cache = db.query(AiMatchingCache).filter(
+            AiMatchingCache.job_id == app_record.job_id,
+            AiMatchingCache.candidate_id == app_record.candidate_id,
+            AiMatchingCache.cv_fingerprint == cv_fingerprint,
+        ).first()
+        if cache:
+            logger.info(f"[AI_MATCH] cache hit at enqueue application_id={application_id}")
+            _copy_cache_to_application_score(db, application_id, cache)
+            return
 
-        # 4. In ra xem Prompt đã gom đủ dữ liệu chưa (Khi debug)
-        print("======== PROMPT GỬI LÊN AI ========")
-        print(prompt)
-        print("===================================")
+        existing_job = db.query(AiMatchingJob).filter(
+            AiMatchingJob.job_id == app_record.job_id,
+            AiMatchingJob.candidate_id == app_record.candidate_id,
+            AiMatchingJob.cv_fingerprint == cv_fingerprint,
+            AiMatchingJob.status.in_([AiMatchingJobStatusEnum.queued, AiMatchingJobStatusEnum.processing]),
+        ).first()
+        if existing_job:
+            logger.info(
+                f"[AI_MATCH] duplicate active job skipped application_id={application_id} "
+                f"job_id={app_record.job_id} candidate_id={app_record.candidate_id}"
+            )
+            return
 
-        # 2. VÒNG LẶP GỌI AI VÀ TỰ ĐỘNG ĐỔI KEY
-        max_retries = len(key_manager.keys)
-        raw_json_string = None
-
-        for attempt in range(max_retries):
-            try:
-                # Lấy key hiện tại và cấu hình cho Gemini
-                current_api_key = key_manager.get_current_key()
-                genai.configure(api_key=current_api_key)
-                
-                print(f"Bắt đầu gọi Google Gemini (Thử lần {attempt + 1}/{max_retries})...")
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        temperature=0.2 
-                    )
-                )
-                
-                # Nếu chạy đến đây là thành công, thoát khỏi vòng lặp
-                raw_json_string = response.text
-                print("Gemini đã trả lời thành công!")
-                break 
-
-            except Exception as e:
-                error_msg = str(e).lower()
-                # Kiểm tra xem lỗi có phải do hết Quota (429) hoặc Limit không
-                if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg or "limit" in error_msg:
-                    print(f"Key hiện tại đã hết Quota hoặc bị Limit. Lỗi: {e}")
-                    key_manager.rotate_key() # Đổi sang key tiếp theo
-                else:
-                    # Nếu là lỗi khác (ví dụ: mất mạng, prompt sai), quăng lỗi luôn không thử lại
-                    raise e
-        
-        # 3. Kiểm tra xem sau N lần thử có lấy được kết quả không
-        if not raw_json_string:
-            raise RuntimeError("Đã thử tất cả các API Key nhưng đều thất bại (Hết sạch Quota toàn bộ hệ thống).")
-
-        # 4. Parse JSON và Lưu DB
-        score_data = json.loads(raw_json_string)
-        crud_application.create_ai_matching_score(db, application_id, score_data)
-        
-        print(f"Đã lưu điểm AI ({score_data['score']}%) cho đơn số {application_id} vào Database!")
-
-    except Exception as e:
-        print(f"Lỗi AI Matching: {e}")
+        job = db.query(AiMatchingJob).filter(
+            AiMatchingJob.application_id == application_id
+        ).first()
+        if job:
+            job.job_id = app_record.job_id
+            job.candidate_id = app_record.candidate_id
+            job.cv_fingerprint = cv_fingerprint
+            job.status = AiMatchingJobStatusEnum.queued
+            job.attempt_count = 0
+            job.error_message = None
+            job.worker_id = None
+            job.locked_at = None
+            job.next_retry_at = datetime.now(timezone.utc)
+        else:
+            job = AiMatchingJob(
+                application_id=application_id,
+                job_id=app_record.job_id,
+                candidate_id=app_record.candidate_id,
+                cv_fingerprint=cv_fingerprint,
+                status=AiMatchingJobStatusEnum.queued,
+                attempt_count=0,
+                next_retry_at=datetime.now(timezone.utc),
+            )
+            db.add(job)
+        db.commit()
+        logger.info(
+            f"[AI_MATCH] enqueued application_id={application_id} "
+            f"job_id={app_record.job_id} candidate_id={app_record.candidate_id}"
+        )
     finally:
         db.close()
+
+
+def _acquire_next_job(db) -> AiMatchingJob | None:
+    now = datetime.now(timezone.utc)
+    job = (
+        db.query(AiMatchingJob)
+        .filter(
+            or_(
+                AiMatchingJob.status == AiMatchingJobStatusEnum.queued,
+                and_(
+                    AiMatchingJob.status == AiMatchingJobStatusEnum.failed,
+                    AiMatchingJob.next_retry_at <= now,
+                ),
+            )
+        )
+        .order_by(AiMatchingJob.created_at.asc())
+        .with_for_update(skip_locked=True)
+        .first()
+    )
+    if not job:
+        return None
+
+    job.status = AiMatchingJobStatusEnum.processing
+    job.locked_at = now
+    job.worker_id = WORKER_ID
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _mark_job_done(db, job: AiMatchingJob):
+    job.status = AiMatchingJobStatusEnum.done
+    job.error_message = None
+    job.locked_at = None
+    db.commit()
+    logger.info(f"[AI_MATCH] done queue_job_id={job.id} application_id={job.application_id}")
+
+
+def _mark_job_failed(db, job: AiMatchingJob, error: Exception):
+    job.attempt_count += 1
+    job.error_message = str(error)[:1000]
+    job.locked_at = None
+
+    if _is_retryable_error(str(error)) and job.attempt_count < MAX_RETRIES:
+        backoff_minutes = min(30, 2 ** job.attempt_count)
+        job.status = AiMatchingJobStatusEnum.failed
+        job.next_retry_at = datetime.now(timezone.utc) + timedelta(minutes=backoff_minutes)
+        logger.warning(
+            f"[AI_MATCH] retry queue_job_id={job.id} application_id={job.application_id} "
+            f"attempt={job.attempt_count} next_retry_at={job.next_retry_at} error={error}"
+        )
+    else:
+        job.status = AiMatchingJobStatusEnum.dead
+        logger.error(
+            f"[AI_MATCH] dead queue_job_id={job.id} application_id={job.application_id} "
+            f"attempt={job.attempt_count} error={error}"
+        )
+    db.commit()
+
+
+def _process_job(db, queue_job: AiMatchingJob):
+    logger.info(f"[AI_MATCH] processing queue_job_id={queue_job.id} application_id={queue_job.application_id}")
+    app_record = db.query(Application).options(
+        joinedload(Application.job_posting),
+        joinedload(Application.candidate_profile).joinedload(CandidateProfile.experiences),
+        joinedload(Application.candidate_profile).joinedload(CandidateProfile.educations),
+        joinedload(Application.candidate_profile).joinedload(CandidateProfile.certifications),
+    ).filter(Application.id == queue_job.application_id).first()
+
+    if not app_record:
+        _mark_job_done(db, queue_job)
+        return
+
+    parsed_data = _upsert_parsed_cv_data(db, app_record, include_ai_parse=True)
+    if not parsed_data.parsed_json:
+        raise RuntimeError("Khong tao duoc parsed_json cho CV")
+
+    cv_fingerprint = _fingerprint(parsed_data.parsed_json, parsed_data.raw_text_snapshot)
+    queue_job.cv_fingerprint = cv_fingerprint
+    db.commit()
+
+    cache = db.query(AiMatchingCache).filter(
+        AiMatchingCache.job_id == app_record.job_id,
+        AiMatchingCache.candidate_id == app_record.candidate_id,
+        AiMatchingCache.cv_fingerprint == cv_fingerprint,
+    ).first()
+    if cache:
+        logger.info(f"[AI_MATCH] cache hit while processing queue_job_id={queue_job.id}")
+        _copy_cache_to_application_score(db, app_record.id, cache)
+        _mark_job_done(db, queue_job)
+        return
+
+    prompt = _score_prompt(app_record.job_posting, parsed_data.parsed_json)
+    score_data = _gemini_json_response(prompt)
+
+    new_cache = AiMatchingCache(
+        job_id=app_record.job_id,
+        candidate_id=app_record.candidate_id,
+        cv_fingerprint=cv_fingerprint,
+        score=score_data.get("score"),
+        strengths=score_data.get("strengths", []),
+        weaknesses=score_data.get("weaknesses", []),
+        explanation=score_data.get("explanation"),
+    )
+    db.add(new_cache)
+    try:
+        db.commit()
+        db.refresh(new_cache)
+    except IntegrityError:
+        db.rollback()
+        new_cache = db.query(AiMatchingCache).filter(
+            AiMatchingCache.job_id == app_record.job_id,
+            AiMatchingCache.candidate_id == app_record.candidate_id,
+            AiMatchingCache.cv_fingerprint == cv_fingerprint,
+        ).first()
+        if not new_cache:
+            raise
+
+    _copy_cache_to_application_score(db, app_record.id, new_cache)
+    _mark_job_done(db, queue_job)
+
+
+def process_ai_matching_queue(batch_size: int = 5) -> int:
+    processed = 0
+    for _ in range(max(1, batch_size)):
+        db = SessionLocal()
+        try:
+            queue_job = _acquire_next_job(db)
+            if not queue_job:
+                break
+            try:
+                _process_job(db, queue_job)
+            except Exception as e:
+                _mark_job_failed(db, queue_job, e)
+            processed += 1
+        finally:
+            db.close()
+    return processed
+
+
+def enqueue_and_process_ai_matching(application_id: int):
+    enqueue_ai_matching_job(application_id)
+    process_ai_matching_queue(batch_size=1)

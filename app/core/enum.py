@@ -43,6 +43,22 @@ class ApplicationStatusEnum(str ,enum.Enum):
     withdrawn = "withdrawn"
     left_company = "left_company"
 
+class CvTypeEnum(str, enum.Enum):
+    profile = "profile"
+    uploaded_cv = "uploaded_cv"
+
+class ParseStatusEnum(str, enum.Enum):
+    pending = "pending"
+    success = "success"
+    failed = "failed"
+
+class AiMatchingJobStatusEnum(str, enum.Enum):
+    queued = "queued"
+    processing = "processing"
+    done = "done"
+    failed = "failed"
+    dead = "dead"
+
 class SenderEnum(str , enum.Enum):
     user = "user"
     ai = "ai"

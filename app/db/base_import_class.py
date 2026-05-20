@@ -14,3 +14,6 @@ from app.models.notifications import Notification
 from app.models.ai_logs import AiLog, AiAlertConfig
 from app.models.job_reports import JobReport
 from app.models.company_follows import CompanyFollow
+from app.models.parsed_cv_data import ParsedCVData
+from app.models.ai_matching_cache import AiMatchingCache
+from app.models.ai_matching_jobs import AiMatchingJob
