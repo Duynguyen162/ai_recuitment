@@ -45,7 +45,7 @@ def verify_company(
         db=db, 
         company_id=company_id, 
         admin_id=current_user.id, 
-        is_approved=request_in.is_approved
+        status=request_in.status
     )
 
     return ResponseSchema(
