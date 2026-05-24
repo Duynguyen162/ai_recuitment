@@ -92,7 +92,8 @@ class CompanyDocumentResponse(BaseModel):
         from_attributes = True
         
 class VerifyRequest(BaseModel):
-    is_approved: bool
+    status: VerificationLogStatusEnum
+    reason: str | None = None
 
 class LockRequest(BaseModel):
     is_locked: bool

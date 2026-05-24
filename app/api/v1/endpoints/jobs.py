@@ -35,6 +35,7 @@ def get_job_posting(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     status: JobStatusEnum | None = Query(None, description="Lọc theo trạng thái"),
+    search: str | None = Query(None, description="Từ khóa tìm kiếm do HR nhập"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
 ):
@@ -46,6 +47,7 @@ def get_job_posting(
         db,
         current_user.id,
         status=status,
+        search=search,
         limit=page_size,
         offset=offset,
     )
@@ -80,7 +82,9 @@ def search_public_jobs(
     limit: int = Query(10, description="Số job mỗi lần trả về"),
     offset: int = Query(0, description="Bỏ qua bao nhiêu job đầu"),
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
+    user_id = current_user.id if current_user else None
     jobs, total = crud_job.get_public_jobs(
         db,
         keyword=keyword,
@@ -90,6 +94,7 @@ def search_public_jobs(
         candidate_exp=candidate_exp,
         limit=limit,
         offset=offset,
+        user_id=user_id,
     )
     return ResponseSchema(
         success=True,
@@ -230,8 +235,10 @@ def get_proposed_jobs(
     limit: int = Query(20, description="Số lượng mỗi trang"),
     offset: int = Query(0, description="Bắt đầu từ bản ghi số mấy"),
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
-    proposed_jobs, total = crud_job.get_proposed_jobs(db, limit=limit, offset=offset)
+    user_id = current_user.id if current_user else None
+    proposed_jobs, total = crud_job.get_proposed_jobs(db, user_id=user_id, limit=limit, offset=offset)
     data = [JobPostingResponse.model_validate(job) for job in proposed_jobs]
 
     return ResponseSchema(
@@ -313,12 +320,14 @@ def get_job_detail(
     if not job_data:
         raise HTTPException(status_code=404, detail="Không tìm thấy thông tin công việc")
 
-    job, has_applied_flag, save = job_data
+    job, has_applied_flag, save, app_status = job_data
     data = JobDetailResponse.model_validate(job)
 
     if current_user:
         data.has_applied = has_applied_flag
         data.is_save = save
+        if app_status:
+            data.application_status = app_status
 
     return ResponseSchema(success=True, data=data)
 

@@ -13,7 +13,7 @@ def get_list_companies(db: Session, status: CompanyVerificationStatusEnum | None
 
     return query.all()
 
-def verify_company_license(db:Session , company_id:int, admin_id: int , is_approved: bool):
+def verify_company_license(db:Session , company_id:int, admin_id: int , status: VerificationLogStatusEnum):
     """Duyệt hoặc Từ chối giấy phép kinh doanh của công ty"""
     # 1. Tìm công ty
     company = db.query(Company).filter(Company.id == company_id).first()
@@ -30,13 +30,16 @@ def verify_company_license(db:Session , company_id:int, admin_id: int , is_appro
             raise HTTPException(status_code=400, detail="Công ty này không có giấy phép nào đang chờ duyệt")
     
     # 3. Cập nhật trạng thái
-    if is_approved:
+    if status == VerificationLogStatusEnum.approved:
         company.verification_status = CompanyVerificationStatusEnum.approved
         verification.status = VerificationLogStatusEnum.approved
-    else:
+    elif status == VerificationLogStatusEnum.rejected:
         company.verification_status = CompanyVerificationStatusEnum.rejected
         verification.status = VerificationLogStatusEnum.rejected
-    
+    elif status == VerificationLogStatusEnum.locked:
+        company.verification_status = CompanyVerificationStatusEnum.locked
+        verification.status = VerificationLogStatusEnum.locked
+        
     verification.reviewed_by = admin_id
     
     db.commit()

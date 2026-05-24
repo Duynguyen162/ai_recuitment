@@ -181,6 +181,17 @@ def get_company_follower_count(db: Session, company_id: int) -> int:
     return db.query(CompanyFollow).filter(CompanyFollow.company_id == company_id).count()
 
 def list_companies_followed(db: Session, candidate_profile_id: int):
-    return db.query(Company).join(CompanyFollow).filter(
+    companies = db.query(Company).join(CompanyFollow).filter(
         CompanyFollow.candidate_id == candidate_profile_id
     ).all()
+    
+    # Tính toán follower_count cho từng công ty
+    followed_companies = []
+    for company in companies:
+        follower_count = db.query(CompanyFollow).filter(CompanyFollow.company_id == company.id).count()
+        followed_companies.append({
+            **company.__dict__,
+            "follower_count": follower_count,
+            "is_followed": True
+        })
+    return followed_companies
