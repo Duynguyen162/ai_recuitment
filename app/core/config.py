@@ -16,9 +16,19 @@ class Settings(BaseSettings):
     
     OPENAI_API_KEY: str
     GOOGLE_API_KEY: str = ""
+    SEPAY_IPN_API_KEY: str = ""
+    SEPAY_BANK_NAME: str = ""
+    SEPAY_BANK_ACCOUNT: str = ""
+    SEPAY_ACCOUNT_HOLDER: str = ""
+    SEPAY_QR_IMAGE_URL: str = ""
+    NGROK_AUTOSTART: bool = False
+    NGROK_AUTHTOKEN: str = ""
+    NGROK_DOMAIN: str = ""
+    NGROK_PORT: int = 8000
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
+        "extra": "ignore",
     }
 # khởi tạo đối tượng Settings để có thể truy cập các biến môi trường trong ứng dụng
 settings = Settings()

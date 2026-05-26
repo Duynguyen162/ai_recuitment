@@ -17,3 +17,5 @@ from app.models.company_follows import CompanyFollow
 from app.models.parsed_cv_data import ParsedCVData
 from app.models.ai_matching_cache import AiMatchingCache
 from app.models.ai_matching_jobs import AiMatchingJob
+from app.models.payment_transactions import PaymentTransaction
+from app.models.subscription_plans import SubscriptionPlan

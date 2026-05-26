@@ -17,6 +17,7 @@ class Company(Base):
     website = Column(String, nullable=True)
     verification_status = Column(Enum(CompanyVerificationStatusEnum), default=CompanyVerificationStatusEnum.pending, nullable=True)
     is_vip = Column(Boolean,nullable=False,server_default="false")
+    vip_expire_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     verifications = relationship(

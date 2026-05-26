@@ -10,6 +10,7 @@ class CompanyBase(BaseModel):
     website: str | None = None
     description: str | None = None
     is_vip: bool
+    vip_expire_at: datetime | None = None
 
 class CompanyCreate(CompanyBase):
     pass
