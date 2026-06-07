@@ -9,7 +9,8 @@ class CompanyBase(BaseModel):
     size: str | None = None
     website: str | None = None
     description: str | None = None
-    is_vip: bool
+    is_vip: bool | None = None
+    vip_expire_at: datetime | None = None
 
 class CompanyCreate(CompanyBase):
     pass
@@ -27,7 +28,9 @@ class CompanyUpdate(BaseModel):
 class CompanyResponse(CompanyBase):
     id: int
     verification_status: CompanyVerificationStatusEnum
+    license_url: str | None = None
     created_at: datetime
+    vip_remaining_days: int | None = None
 
     class Config:
         from_attributes = True
@@ -96,4 +99,9 @@ class VerifyRequest(BaseModel):
     reason: str | None = None
 
 class LockRequest(BaseModel):
-    is_locked: bool
+    status: CompanyVerificationStatusEnum
+    reason: str | None = None
+
+class ResubmitVerificationRequest(BaseModel):
+    license_url: str
+

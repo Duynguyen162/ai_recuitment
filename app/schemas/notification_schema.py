@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from datetime import datetime
 
 
 class NotificationResponse(BaseModel):
@@ -7,6 +8,7 @@ class NotificationResponse(BaseModel):
     title: str
     body: str
     is_read: bool
+    created_at: datetime
 
     class Config:
         from_attributes = True

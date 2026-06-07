@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user
-from app.core.enum import CompanyVerificationStatusEnum, RoleEnum
+from app.core.enum import CompanyVerificationStatusEnum, RoleEnum, VerificationLogStatusEnum
 from app.schemas.company_schema import CompanyResponse , VerifyRequest,LockRequest
+from app.schemas.admin_schema import VerifyLicenseRequest, CompanyVerificationResponse
 from app.schemas.base_schema import ResponseSchema
 from app.crud import crud_admin
 from pydantic import BaseModel
@@ -45,7 +46,8 @@ def verify_company(
         db=db, 
         company_id=company_id, 
         admin_id=current_user.id, 
-        status=request_in.status
+        status=request_in.status,
+        reason=request_in.reason
     )
 
     return ResponseSchema(
@@ -62,17 +64,14 @@ def lock_company(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Admin Khóa (is_locked=true) hoặc Mở khóa (is_locked=false) toàn bộ hoạt động của công ty.
-    Khi bị khóa, công ty sẽ không thể đăng tin tuyển dụng mới.
-    """
     if current_user.role != RoleEnum.admin:
         raise HTTPException(status_code=403, detail="Chỉ Admin mới có quyền truy cập")
 
     updated_company = crud_admin.lock_or_unlock_company(
         db=db, 
         company_id=company_id, 
-        is_locked=request_in.is_locked
+        status=request_in.status,
+        reason=request_in.reason
     )
 
     return ResponseSchema(
@@ -81,3 +80,57 @@ def lock_company(
         error=None,
         meta=None
     )
+
+@router.put("/companies/{company_id}/unlock", response_model=ResponseSchema[CompanyResponse])
+def unlock_company(
+    company_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Admin Mở khóa công ty, chuyển trạng thái về approved"""
+    if current_user.role != RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Chỉ Admin mới có quyền truy cập")
+
+    updated_company = crud_admin.lock_or_unlock_company(
+        db=db, 
+        company_id=company_id, 
+        status=CompanyVerificationStatusEnum.approved,
+        reason=None
+    )
+
+    return ResponseSchema(
+        success=True,
+        data=CompanyResponse.model_validate(updated_company),
+        error=None,
+        meta=None
+    )
+
+@router.put("/verifications/{verification_id}/verify", response_model=ResponseSchema[CompanyVerificationResponse])
+def verify_company_license_endpoint(
+    verification_id: int,
+    request_in: VerifyLicenseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Admin Phê duyệt (approved) hoặc Từ chối (rejected) một bản ghi CompanyVerification cụ thể.
+    Đồng thời cập nhật trạng thái của công ty tương ứng.
+    """
+    if current_user.role != RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Chỉ Admin mới có quyền truy cập")
+
+    updated_verification = crud_admin.verify_company_license_by_id(
+        db=db,
+        verification_id=verification_id,
+        admin_id=current_user.id,
+        status=request_in.status,
+        reason=request_in.reason
+    )
+
+    return ResponseSchema(
+        success=True,
+        data=CompanyVerificationResponse.model_validate(updated_verification),
+        error=None,
+        meta=None
+    )
+

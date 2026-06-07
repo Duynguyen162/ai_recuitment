@@ -52,6 +52,7 @@ class JobDetailResponse(BaseModel):
     tags: List[str] | None = [] # Các thẻ kỹ năng để AI Matching
     job_type: JobTypeEnum
     status: JobStatusEnum
+    locked_by_admin: bool = False
     created_at: datetime
     expired_at: datetime
     company: CompanyShortResponse
@@ -67,6 +68,7 @@ class JobPostingResponse(JobPostingBase):
     company_id: int
     created_by: int
     status: JobStatusEnum
+    locked_by_admin: bool = False
     created_at: datetime
     company: CompanyShortResponse
     is_save:bool | None = None

@@ -66,3 +66,8 @@ htmlcov/
 uploads/
 
 /secrets/
+/docs/
+/api_schema.json
+/db_schema.json
+/extract.py
+/generate_md.py

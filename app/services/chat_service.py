@@ -2,9 +2,11 @@ import google.generativeai as genai
 from langchain_chroma import Chroma
 from chromadb.config import Settings as ChromaSettings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import time
 from pathlib import Path
 from app.core.config import settings
 from sqlalchemy.orm import Session
+from app.models.ai_logs import AiLog
 from app.models.chat_messages import ChatMessage
 from app.core.enum import SenderEnum
 
@@ -23,6 +25,8 @@ def get_ai_response(db: Session, company_id: int, message: str, session_id: int)
     db.commit()
 
     try:
+        start_time = time.perf_counter()
+        
         # 1. Khởi tạo Embeddings và Vector Store
         embeddings = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-001", 
@@ -85,11 +89,34 @@ QUY TẮC BẮT BUỘC:
         # 5. Gọi AI
         chat_session = model.start_chat(history=formatted_history)
         response = chat_session.send_message(message)
+        
+        processing_time_ms = int((time.perf_counter() - start_time) * 1000)
+        usage = getattr(response, "usage_metadata", None)
+        tokens = usage.total_token_count if usage else 0
         ai_reply = response.text
+        
+        # Log success
+        ai_log = AiLog(
+            service_type="chatbot",
+            tokens_used=tokens,
+            processing_time_ms=processing_time_ms,
+            is_error=False
+        )
+        db.add(ai_log)
 
     except Exception as e:
         print(f"Lỗi AI Service: {str(e)}")
         ai_reply = "Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng thử lại sau."
+        
+        if 'start_time' in locals():
+            processing_time_ms = int((time.perf_counter() - start_time) * 1000)
+            ai_log = AiLog(
+                service_type="chatbot",
+                processing_time_ms=processing_time_ms,
+                is_error=True,
+                error_message=str(e)[:1000]
+            )
+            db.add(ai_log)
 
     # 6. Lưu câu trả lời của AI vào DB
     ai_msg = ChatMessage(

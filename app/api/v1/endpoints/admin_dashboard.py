@@ -156,7 +156,7 @@ def get_flagged_jobs(
 @router.post(
     "/jobs/{job_id}/action",
     response_model=ResponseSchema[dict],
-    summary="Hành động Admin lên Job (allow / pause / close)",
+    summary="Hành động Admin lên Job (close)",
 )
 def job_action(
     job_id: int,
@@ -165,8 +165,6 @@ def job_action(
     current_user: User = Depends(get_current_user),
 ):
     """
-    - allow: Mở lại job → published, gỡ lock → HR kiểm soát được lại.
-    - pause: Tạm dừng → paused, chưa lock cứng (HR có thể đề nghị mở lại).
     - close: Đóng vĩnh viễn → closed + locked_by_admin=True, HR không tự mở lại được.
     """
     _require_admin(current_user)
@@ -232,9 +230,7 @@ def resolve_report(
     """
     Chỉ cho phép chuyển sang **resolved** hoặc **dismissed**.
     Bắt buộc truyền `admin_action` để ghi lại admin đã làm gì:
-    - `paused_job`  — Tạm dừng tin tuyển dụng
     - `closed_job`  — Đóng vĩnh viễn + khóa tin
-    - `warned`      — Cảnh cáo công ty (không tác động job)
     - `no_action`   — Bỏ qua, không có hành động
     """
     _require_admin(current_user)

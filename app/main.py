@@ -12,7 +12,9 @@ from dotenv import load_dotenv
 from app.api.v1.router import api_router
 from app.core.exceptions import global_exception_handler
 from app.core.logger import logger
+from app.services.ngrok_service import public_url, start_ngrok, stop_ngrok
 import app.db.base_import_class
+from app.core.scheduler import scheduler
 
 load_dotenv()
 
@@ -92,12 +94,41 @@ app.include_router(api_router, prefix="/api/v1")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
+@app.on_event("startup")
+def on_startup():
+    scheduler.start()
+    logger.info("APScheduler started")
+    try:
+        url = start_ngrok()
+        if url:
+            logger.info(f"Webhook URL de set tren SePay: {url}/api/v1/payment/sepay-ipn")
+    except Exception as exc:
+        logger.warning(f"Khong the khoi dong ngrok: {exc}")
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    scheduler.shutdown()
+    logger.info("APScheduler shut down")
+    stop_ngrok()
+
+
 @app.get("/", tags=["Auth"], summary="Kiểm tra API hoạt động")
 def read_root():
     logger.info("Truy cập thành công")
     return {
         "success": True,
         "data": "Chào mừng bạn đến với API quản lý tuyển dụng!",
+        "error": None,
+        "meta": None,
+    }
+
+
+@app.get("/ngrok-url", tags=["Auth"], summary="Lay URL public ngrok hien tai")
+def get_ngrok_url():
+    return {
+        "success": True,
+        "data": public_url,
         "error": None,
         "meta": None,
     }
