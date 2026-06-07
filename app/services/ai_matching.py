@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import socket
+import time
 from datetime import datetime, timedelta, timezone
 
 import google.generativeai as genai
@@ -12,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.enum import AiMatchingJobStatusEnum, CvTypeEnum, ParseStatusEnum
 from app.crud import crud_application
 from app.db.database import SessionLocal
+from app.models.ai_logs import AiLog
 from app.models.ai_matching_cache import AiMatchingCache
 from app.models.ai_matching_jobs import AiMatchingJob
 from app.models.applications import Application
@@ -73,10 +75,12 @@ def _is_retryable_error(error_msg: str) -> bool:
     return any(key in msg for key in ["429", "quota", "exhausted", "limit", "timeout", "temporar", "connection", "network"])
 
 
-def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash") -> dict:
+def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash", db=None, application_id=None) -> dict:
     manager = _get_key_manager()
     max_retries = len(manager.keys)
     last_error = None
+    start_time = time.perf_counter()
+    
     for _ in range(max_retries):
         try:
             genai.configure(api_key=manager.get_current_key())
@@ -88,6 +92,33 @@ def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash") -> 
                     temperature=0.2,
                 ),
             )
+            
+            processing_time_ms = int((time.perf_counter() - start_time) * 1000)
+            usage = getattr(response, "usage_metadata", None)
+            tokens = usage.total_token_count if usage else 0
+            
+            try:
+                session = db if db else SessionLocal()
+                ai_log = AiLog(
+                    service_type="matching",
+                    application_id=application_id,
+                    tokens_used=tokens,
+                    processing_time_ms=processing_time_ms,
+                    is_error=False
+                )
+                session.add(ai_log)
+                if db:
+                    session.flush()
+                else:
+                    session.commit()
+            except Exception as log_e:
+                logger.error(f"Failed to save AiLog: {log_e}")
+                if not db:
+                    session.rollback()
+            finally:
+                if not db:
+                    session.close()
+
             return json.loads(response.text)
         except Exception as e:
             last_error = e
@@ -95,6 +126,29 @@ def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash") -> 
             if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg or "limit" in error_msg:
                 manager.rotate_key()
                 continue
+                
+            processing_time_ms = int((time.perf_counter() - start_time) * 1000)
+            try:
+                session = db if db else SessionLocal()
+                ai_log = AiLog(
+                    service_type="matching",
+                    application_id=application_id,
+                    processing_time_ms=processing_time_ms,
+                    is_error=True,
+                    error_message=str(e)[:1000]
+                )
+                session.add(ai_log)
+                if db:
+                    session.flush()
+                else:
+                    session.commit()
+            except Exception as log_e:
+                logger.error(f"Failed to save error AiLog: {log_e}")
+                if not db:
+                    session.rollback()
+            finally:
+                if not db:
+                    session.close()
             raise
     raise RuntimeError(f"Khong the goi Gemini voi tat ca API key: {last_error}")
 
@@ -160,7 +214,7 @@ def _extract_pdf_text(file_path: str) -> str:
     return "\n".join([(page.extract_text() or "") for page in reader.pages]).strip()
 
 
-def _parse_uploaded_cv_to_json(raw_text: str) -> dict:
+def _parse_uploaded_cv_to_json(raw_text: str, db=None, application_id=None) -> dict:
     parse_prompt = f"""
     Ban la he thong parser CV. Hay chuyen van ban CV thanh JSON sach de AI matching doc.
     Tra ve JSON dung schema sau va KHONG co text khac:
@@ -177,7 +231,7 @@ def _parse_uploaded_cv_to_json(raw_text: str) -> dict:
     CV TEXT:
     {raw_text}
     """
-    return _gemini_json_response(parse_prompt)
+    return _gemini_json_response(parse_prompt, db=db, application_id=application_id)
 
 
 def _upsert_parsed_cv_data(db, application: Application, include_ai_parse: bool) -> ParsedCVData:
@@ -197,7 +251,7 @@ def _upsert_parsed_cv_data(db, application: Application, include_ai_parse: bool)
             raise ValueError("Khong tim thay CV upload de parse")
         raw_text = _extract_pdf_text(cv.file_url)
         if include_ai_parse:
-            parsed_json = _parse_uploaded_cv_to_json(raw_text)
+            parsed_json = _parse_uploaded_cv_to_json(raw_text, db=db, application_id=application.id)
             parse_status = ParseStatusEnum.success
         else:
             parsed_json = None
@@ -427,7 +481,7 @@ def _process_job(db, queue_job: AiMatchingJob):
         return
 
     prompt = _score_prompt(app_record.job_posting, parsed_data.parsed_json)
-    score_data = _gemini_json_response(prompt)
+    score_data = _gemini_json_response(prompt, db=db, application_id=queue_job.application_id)
 
     new_cache = AiMatchingCache(
         job_id=app_record.job_id,

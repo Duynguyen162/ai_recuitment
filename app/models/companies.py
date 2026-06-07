@@ -20,6 +20,18 @@ class Company(Base):
     vip_expire_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    @property
+    def vip_remaining_days(self) -> int | None:
+        if not self.is_vip or not self.vip_expire_at:
+            return None
+        from datetime import datetime, timezone
+        import math
+        now = datetime.now(timezone.utc)
+        if self.vip_expire_at > now:
+            delta = self.vip_expire_at - now
+            return math.ceil(delta.total_seconds() / 86400)
+        return 0
+
     verifications = relationship(
         "CompanyVerification",
         back_populates="company",

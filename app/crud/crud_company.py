@@ -9,11 +9,19 @@ from app.models.candidate_profiles import CandidateProfile
 from app.schemas.company_schema import CompanyCreate, CompanyDocumentCreate,CompanyUpdate
 from app.services.rag_service import delete_document_from_chroma
 
-def get_company_by_hr(db: Session , user_id: int):
-    """Lấy thông tin công ty mà HR đang quản lý"""
+def get_company_by_hr(db: Session, user_id: int):
     member = db.query(CompanyMember).filter(CompanyMember.user_id == user_id).first()
     if member:
-        return db.query(Company).filter(Company.id == member.company_id).first()
+        company = db.query(Company).filter(Company.id == member.company_id).first()
+        if company:
+            # Query trực tiếp giấy phép mới nhất
+            latest_verification = db.query(CompanyVerification).filter(
+                CompanyVerification.company_id == company.id
+            ).order_by(CompanyVerification.id.desc()).first()
+            
+            # Gán thuộc tính động
+            company.license_url = latest_verification.license_url if latest_verification else None
+            return company
     return None
 
 def register_company(db: Session, hr_id: int , company_in: CompanyCreate , license_url:str ):
@@ -195,3 +203,27 @@ def list_companies_followed(db: Session, candidate_profile_id: int):
             "is_followed": True
         })
     return followed_companies
+
+def resubmit_company_verification(db: Session, company_id: int, license_url: str) -> Company:
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công ty")
+
+    if company.verification_status != CompanyVerificationStatusEnum.rejected:
+        raise HTTPException(status_code=400, detail="Chỉ có thể yêu cầu duyệt lại khi trạng thái hiện tại là bị từ chối")
+
+    company.verification_status = CompanyVerificationStatusEnum.pending
+    
+    # Thêm bảng xác thực cty
+    db_verification = CompanyVerification(
+        company_id = company.id,
+        license_url = license_url,
+        status = VerificationLogStatusEnum.pending
+    )
+    db.add(db_verification)
+    db.commit()
+    db.refresh(company)
+    
+    # Cập nhật thuộc tính license_url động để trả về trong response
+    company.license_url = license_url
+    return company

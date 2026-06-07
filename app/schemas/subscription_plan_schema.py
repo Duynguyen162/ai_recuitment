@@ -19,8 +19,6 @@ class SubscriptionPlanCreate(SubscriptionPlanBase):
 
 class SubscriptionPlanUpdate(BaseModel):
     name: str | None = None
-    price_vnd: int | None = None
-    vip_duration_days: int | None = None
     is_active: bool | None = None
 
 

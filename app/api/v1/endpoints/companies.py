@@ -17,6 +17,7 @@ from app.schemas.company_schema import (
     CompanyRegisterRequest,
     CompanyResponse,
     CompanyUpdate,
+    ResubmitVerificationRequest,
 )
 from app.services.rag_service import process_and_store_document, resolve_document_path
 
@@ -214,3 +215,33 @@ def retry_document_rag(
         error=None,
         meta=None,
     )
+
+@router.post("/my_company/resubmit_verification", response_model=ResponseSchema[CompanyResponse])
+def resubmit_verification(
+    request_in: ResubmitVerificationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cho phép HR gửi yêu cầu duyệt lại giấy phép kinh doanh (khi bị từ chối)
+    """
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(status_code=403, detail="Chỉ nhà tuyển dụng mới có quyền thực hiện")
+
+    company = crud_company.get_company_by_hr(db, current_user.id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Bạn chưa thuộc công ty nào")
+
+    updated_company = crud_company.resubmit_company_verification(
+        db=db,
+        company_id=company.id,
+        license_url=request_in.license_url
+    )
+
+    return ResponseSchema(
+        success=True,
+        data=CompanyResponse.model_validate(updated_company),
+        error=None,
+        meta=None
+    )
+

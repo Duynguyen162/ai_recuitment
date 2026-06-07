@@ -95,6 +95,23 @@ class AdminVerifyRequest(BaseModel):
     reason: Optional[str] = None  # Dùng khi từ chối
 
 
+class VerifyLicenseRequest(BaseModel):
+    status: VerificationLogStatusEnum
+    reason: Optional[str] = None
+
+
+class CompanyVerificationResponse(BaseModel):
+    id: int
+    company_id: int
+    status: VerificationLogStatusEnum
+    license_url: str
+    reviewed_by: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ─── A-06: Job Reports ───────────────────────────────────────────────────────
 
 class AdminJobFlaggedItem(BaseModel):
@@ -138,8 +155,6 @@ class ResolveReportRequest(BaseModel):
 class JobActionRequest(BaseModel):
     """
     Hành động của Admin lên Job.
-    - allow  → published  + gỡ lock (HR có thể kiểm soát lại)
-    - pause  → paused     (tạm khóa để xem xét, chưa lock vĩnh viễn)
     - close  → closed     + bật locked_by_admin (HR không mở lại được)
     """
     action: AdminJobActionEnum

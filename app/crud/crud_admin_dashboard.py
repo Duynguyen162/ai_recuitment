@@ -225,6 +225,32 @@ def admin_update_company_status(
                 else VerificationLogStatusEnum.rejected
             )
 
+    # Gửi thông báo đến tất cả thành viên của công ty
+    from app.crud.crud_notification import create_notification
+    members = db.query(CompanyMember).filter(CompanyMember.company_id == company_id).all()
+    for member in members:
+        if new_status == CompanyVerificationStatusEnum.approved:
+            create_notification(
+                db=db,
+                user_id=member.user_id,
+                title="Giấy phép kinh doanh đã được duyệt",
+                body=f"Giấy phép kinh doanh của công ty '{company.name}' đã được phê duyệt thành công bởi Ban quản trị."
+            )
+        elif new_status == CompanyVerificationStatusEnum.rejected:
+            create_notification(
+                db=db,
+                user_id=member.user_id,
+                title="Giấy phép kinh doanh bị từ chối",
+                body=f"Giấy phép kinh doanh của công ty '{company.name}' đã bị từ chối duyệt. Lý do: {reason or 'Không có lý do cụ thể'}."
+            )
+        elif new_status == CompanyVerificationStatusEnum.locked:
+            create_notification(
+                db=db,
+                user_id=member.user_id,
+                title="Công ty của bạn đã bị khóa tài khoản",
+                body=f"Công ty '{company.name}' đã bị khóa bởi Ban quản trị. Lý do: {reason or 'Không có lý do cụ thể'}."
+            )
+
     db.commit()
     db.refresh(company)
     return company
@@ -268,7 +294,6 @@ def admin_update_job_status(
     """
     Admin thực hiện hành động lên job:
     - allow  → published  + locked_by_admin=False (HR kiểm soát lại)
-    - pause  → paused     (tạm khóa để xem xét, chưa lock cứng)
     - close  → closed     + locked_by_admin=True  (HR không mở lại được)
     """
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
@@ -276,8 +301,6 @@ def admin_update_job_status(
         raise HTTPException(status_code=404, detail="Không tìm thấy job")
 
     action_map: dict[AdminJobActionEnum, tuple[JobStatusEnum, bool]] = {
-        AdminJobActionEnum.allow: (JobStatusEnum.published, False),
-        AdminJobActionEnum.pause: (JobStatusEnum.paused,    False),
         AdminJobActionEnum.close: (JobStatusEnum.closed,    True),
     }
 
@@ -287,6 +310,14 @@ def admin_update_job_status(
 
     db.commit()
     db.refresh(job)
+
+    # Gửi thông báo cho HR
+    from app.crud.crud_notification import create_notification
+    if action == AdminJobActionEnum.close:
+        title = "Tin tuyển dụng bị đóng vĩnh viễn"
+        body = f"Tin tuyển dụng '{job.title}' của bạn đã bị Admin đóng và khóa vĩnh viễn do vi phạm quy định."
+        create_notification(db, user_id=job.created_by, title=title, body=body)
+
     return job
 
 
