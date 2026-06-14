@@ -1,6 +1,9 @@
 from app.models.job_reports import JobReportStatusEnum
 import enum
 from pydantic import BaseModel, Field
+
+class AIGenerateJobRequest(BaseModel):
+    prompt: str = Field(..., description="Yêu cầu tuyển dụng ngắn gọn từ HR")
 from datetime import datetime
 from typing import List
 from app.core.enum import JobTypeEnum, JobStatusEnum

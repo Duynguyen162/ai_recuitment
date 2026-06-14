@@ -182,7 +182,14 @@ def delete_candidate_cv(db: Session , cv_id: int , current_user: User)->None:
     cv_record = db.query(CVUpload).filter(CVUpload.id == cv_id,
                                     CandidateProfile.user_id == current_user.id).first()
     if not cv_record:
-        raise HTTPException(status_code=404, detail="Không tìm thấy chứng chỉ với id này")
+        raise HTTPException(status_code=404, detail="Không tìm thấy CV với id này")
+        
+    if cv_record.applications:
+        raise HTTPException(
+            status_code=400, 
+            detail="Không thể xóa CV này vì đã được sử dụng trong một hoặc nhiều đơn ứng tuyển."
+        )
+
     # xóa file vật lý
     if os.path.exists(cv_record.file_url):
         os.remove(cv_record.file_url)

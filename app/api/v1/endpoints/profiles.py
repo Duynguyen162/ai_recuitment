@@ -1,7 +1,9 @@
 import asyncio
 import os
 import sys
-from fastapi import APIRouter, File, HTTPException
+import shutil
+import uuid
+from fastapi import APIRouter, File, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.core.enum import RoleEnum
 from app.crud.crud_candidate_detail import create_candidate_certification, create_candidate_cv, create_candidate_education, create_candidate_experience, delete_candidate_certification, delete_candidate_cv, delete_candidate_education, delete_candidate_experience, get_candidate_certification, get_candidate_cv, get_candidate_cv_by_id, get_candidate_education, get_candidate_experience, get_full_candidate_cv, update_candidate_certification, update_candidate_education, update_candidate_experience
@@ -58,6 +60,52 @@ def update_profile(profile_in: CandidateProfileUpdate,
         error=None,
         meta=None
     )
+
+@router.post("/profileCandidate/avatar", response_model=ResponseSchema[str])
+def upload_avatar(
+    avatar: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    profile: CandidateProfile = Depends(get_current_candidate_profile)
+):
+    """
+    API riêng để upload avatar. 
+    Lưu ý: Phải tách riêng vì API /profileCandidate đang nhận chuẩn JSON, 
+    còn upload file cần chuẩn multipart/form-data.
+    """
+    if not avatar.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File phải là hình ảnh")
+
+    # Tạo thư mục nếu chưa có
+    upload_dir = "uploads/avatars"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Đổi tên file để tránh trùng lặp
+    file_extension = avatar.filename.split(".")[-1]
+    new_filename = f"{uuid.uuid4().hex}.{file_extension}"
+    file_path = os.path.join(upload_dir, new_filename)
+
+    # Lưu file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(avatar.file, buffer)
+
+    # Cập nhật DB
+    profile.avatar_url = file_path.replace("\\", "/") # chuẩn hóa path cho URL
+    db.commit()
+    db.refresh(profile)
+
+    full_avatar_url = profile.avatar_url
+    if full_avatar_url and not full_avatar_url.startswith("http"):
+        from app.core.config import settings
+        full_avatar_url = f"{settings.BASE_URL}/{full_avatar_url}"
+
+    return ResponseSchema(
+        success=True,
+        data=full_avatar_url,
+        error=None,
+        meta=None
+    )
+
 #=============================================================#
 #====================== KINH NGHIỆM ==========================#
 #=============================================================#

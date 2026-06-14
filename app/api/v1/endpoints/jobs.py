@@ -1,3 +1,4 @@
+from app.core.enum import VipEnum
 from app.schemas.job_schema import JobStatusActionEnum
 from app.schemas.job_schema import JobReposting
 from app.schemas.job_schema import JobReportingResponse
@@ -9,8 +10,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_current_user_optional
 from app.core.enum import CompanyVerificationStatusEnum, RoleEnum, JobStatusEnum
 from app.crud import crud_job
+from app.crud.crud_notification import create_notification
 from app.db.database import get_db
 from app.models.companies import Company, CompanyMember
+from app.models.company_follows import CompanyFollow
+from app.models.candidate_profiles import CandidateProfile
 from app.models.user import User
 from app.schemas.base_schema import ResponseSchema
 from app.schemas.job_schema import (
@@ -22,8 +26,55 @@ from app.schemas.job_schema import (
 )
 from app.schemas.save_job_schema import SaveJobResponse
 
+from app.schemas.job_schema import AIGenerateJobRequest
+from app.services.ai_job_generator import generate_job_posting_with_ai
+
 router = APIRouter()
 
+@router.post(
+    "/generate_ai",
+    response_model=ResponseSchema[dict],
+    tags=["HR Jobs"],
+    summary="AI hỗ trợ tự động viết tin tuyển dụng",
+)
+def generate_job_with_ai(
+    request: AIGenerateJobRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    HR nhập vài yêu cầu ngắn gọn, AI (Gemini) sẽ trả về JSON chuẩn format 
+    của form đăng bài để Frontend fill tự động.
+    """
+    if current_user.role != RoleEnum.hr_manager:
+        raise HTTPException(status_code=403, detail="Chỉ HR mới được dùng tính năng AI tạo Job")
+
+    member = db.query(CompanyMember).filter(CompanyMember.user_id == current_user.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Bạn chưa thuộc công ty nào")
+        
+    company = db.query(Company).filter(Company.id == member.company_id).first()
+
+    if company.verification_status != CompanyVerificationStatusEnum.approved:
+        raise HTTPException(
+            status_code=403,
+            detail="Công ty chưa được xác thực, không thể dùng tính năng này",
+        )
+    if not company.is_vip:
+        raise HTTPException(
+            status_code=403,
+            detail="Công ty chưa là VIP, không thể dùng tính năng này",
+        )
+
+    # Gọi AI Generator
+    generated_data = generate_job_posting_with_ai(prompt=request.prompt, db=db)
+
+    return ResponseSchema(
+        success=True,
+        data=generated_data,
+        error=None,
+        meta=None,
+    )
 
 @router.get(
     "/get_jobs_create_by_hr",
@@ -145,6 +196,21 @@ def change_job_status(
 
     if not updated_job:
         raise HTTPException(status_code=404, detail="Không tìm thấy job hoặc bạn không có quyền")
+
+    if final_action == JobStatusActionEnum.publish:
+        company = db.query(Company).filter(Company.id == member.company_id).first()
+        company_name = company.company_name if company else "Một công ty bạn theo dõi"
+        
+        followers = db.query(CompanyFollow).filter(CompanyFollow.company_id == member.company_id).all()
+        for f in followers:
+            candidate = db.query(CandidateProfile).filter(CandidateProfile.id == f.candidate_id).first()
+            if candidate and candidate.user_id:
+                create_notification(
+                    db=db,
+                    user_id=candidate.user_id,
+                    title=f"{company_name} vừa đăng tuyển công việc mới",
+                    body=f"Vị trí: {updated_job.title}. Hãy xem ngay!"
+                )
 
     return ResponseSchema(
         success=True,
