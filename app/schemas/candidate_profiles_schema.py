@@ -1,7 +1,6 @@
 import datetime
-from pydantic import BaseModel, ConfigDict
-from typing import Optional ,List
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Optional, List
 
 from app.schemas.candidate_details_schema import CandidateExperienceResponse, CandidateEducationResponse, CandidateCertificationResponse, CVUploadResponse
 
@@ -28,6 +27,14 @@ class CandidateProfileResponse(BaseModel):
     github_url: str | None = None
     skill_tags: Optional[List[str]] = []
     years_of_experience: Optional[int] = None
+    
+    @field_validator('avatar_url', mode='before')
+    @classmethod
+    def prepend_base_url(cls, v: Optional[str]) -> Optional[str]:
+        if v and not v.startswith("http"):
+            from app.core.config import settings
+            return f"{settings.BASE_URL}/{v}"
+        return v
     
     experiences: List[CandidateExperienceResponse] = []
     educations: List[CandidateEducationResponse] = []

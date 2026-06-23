@@ -18,6 +18,9 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Chatbot"])
 
+from app.services.ai_quota_service import check_ai_quota
+from app.api.deps import get_current_user
+
 @router.post(
     "/chat", 
     response_model=ResponseSchema[ChatResponse],
@@ -27,10 +30,14 @@ router = APIRouter(tags=["Chatbot"])
 def candidate_chat(
     request_in: ChatRequest,
     db: Session = Depends(get_db),
-    candidate_profile: CandidateProfile = Depends(get_current_candidate_profile)
+    candidate_profile: CandidateProfile = Depends(get_current_candidate_profile),
+    current_user: User = Depends(get_current_user)
 ):
     """API cho ứng viên chat với AI của công ty"""
     
+    # Check quota
+    check_ai_quota(db, current_user)
+
     # 1. Tìm thông tin Job và Company
     job = db.query(JobPosting).filter(JobPosting.id == request_in.job_id).first()
     if not job:
@@ -59,7 +66,8 @@ def candidate_chat(
             db=db,
             company_id=company_id,
             message=request_in.message,
-            session_id=session.id
+            session_id=session.id,
+            user=current_user
         )
         
         return ResponseSchema(

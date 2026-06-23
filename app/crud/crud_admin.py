@@ -15,12 +15,12 @@ def get_list_companies(db: Session, status: CompanyVerificationStatusEnum | None
 
 def verify_company_license(db:Session , company_id:int, admin_id: int , status: VerificationLogStatusEnum, reason: str | None = None):
     """Duyệt hoặc Từ chối giấy phép kinh doanh của công ty"""
-    # 1. Tìm công ty
+    # Tìm công ty
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Không tìm thấy công ty")
     
-    # 2. Tìm yêu cầu xác minh đang pending của công ty này
+    # Tìm yêu cầu xác minh đang pending của công ty này
     verification = db.query(CompanyVerification).filter(
         CompanyVerification.company_id == company_id,
         CompanyVerification.status == VerificationLogStatusEnum.pending

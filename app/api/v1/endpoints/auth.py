@@ -71,17 +71,24 @@ def _clear_auth_cookie(response: Response) -> None:
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_active_user)):
+    avatar_url = None
+    name = None
+    
+    if current_user.role == RoleEnum.candidate and current_user.candidate_profile:
+        name = current_user.candidate_profile.full_name
+        avatar_url = current_user.candidate_profile.avatar_url
+        if avatar_url and not avatar_url.startswith("http"):
+            # Chèn BASE_URL (http://localhost:8000) vào trước để Frontend gọi được
+            avatar_url = f"{settings.BASE_URL}/{avatar_url}"
+
     return {
         "success": True,
         "data": {
             "id": current_user.id,
             "email": current_user.email,
             "role": current_user.role.value,
-            "name": (
-                current_user.candidate_profile.full_name
-                if current_user.role == RoleEnum.candidate
-                else None
-            ),
+            "name": name,
+            "avatar": avatar_url,
         },
     }
 
@@ -160,7 +167,7 @@ def forgot_password(
     user = get_user_by_email(db, request_in.email)
     if user:
         token = create_password_reset_token(user.email)
-        reset_link = f"http://localhost:3000/auth/reset-password?token={token}"
+        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
         background_tasks.add_task(send_reset_password_email, user.email, reset_link)
 
     return {

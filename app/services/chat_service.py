@@ -14,7 +14,9 @@ from app.core.enum import SenderEnum
 VECTOR_DB_DIR = str(Path("chroma_db").resolve())
 COLLECTION_NAME = "company_policies"
 
-def get_ai_response(db: Session, company_id: int, message: str, session_id: int):
+from app.models.user import User
+
+def get_ai_response(db: Session, company_id: int, message: str, session_id: int, user: User):
     # 0. Lưu tin nhắn của người dùng vào DB
     user_msg = ChatMessage(
         session_id=session_id,
@@ -98,11 +100,16 @@ QUY TẮC BẮT BUỘC:
         # Log success
         ai_log = AiLog(
             service_type="chatbot",
+            user_id=user.id,
             tokens_used=tokens,
             processing_time_ms=processing_time_ms,
             is_error=False
         )
         db.add(ai_log)
+        
+        from app.services.ai_quota_service import consume_ai_tokens
+        if tokens > 0:
+            consume_ai_tokens(db, user.id, tokens)
 
     except Exception as e:
         print(f"Lỗi AI Service: {str(e)}")
@@ -112,6 +119,7 @@ QUY TẮC BẮT BUỘC:
             processing_time_ms = int((time.perf_counter() - start_time) * 1000)
             ai_log = AiLog(
                 service_type="chatbot",
+                user_id=user.id,
                 processing_time_ms=processing_time_ms,
                 is_error=True,
                 error_message=str(e)[:1000]

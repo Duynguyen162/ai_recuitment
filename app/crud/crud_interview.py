@@ -29,7 +29,7 @@ def _get_owned_application(db: Session, application_id: int, hr_user_id: int) ->
     application = (
         db.query(Application)
         .options(
-            joinedload(Application.job_posting),
+            joinedload(Application.job_posting).joinedload(JobPosting.company),
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.user),
             joinedload(Application.interviews),
         )
@@ -83,7 +83,10 @@ def update_interview(
         .options(
             joinedload(Interview.application)
             .joinedload(Application.candidate_profile)
-            .joinedload(CandidateProfile.user)
+            .joinedload(CandidateProfile.user),
+            joinedload(Interview.application)
+            .joinedload(Application.job_posting)
+            .joinedload(JobPosting.company),
         )
         .filter(
             Interview.id == interview_id,

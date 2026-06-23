@@ -11,6 +11,7 @@ class AiLog(Base):
     id = Column(BIGINT, primary_key=True, index=True, autoincrement=True)
     service_type = Column(String(50), nullable=False, index=True)  # matching | chatbot | jd_moderation
     application_id = Column(BIGINT, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(BIGINT, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     tokens_used = Column(Integer, nullable=True)
     processing_time_ms = Column(Integer, nullable=True)
     is_error = Column(Boolean, nullable=False, default=False)

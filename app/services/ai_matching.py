@@ -75,7 +75,9 @@ def _is_retryable_error(error_msg: str) -> bool:
     return any(key in msg for key in ["429", "quota", "exhausted", "limit", "timeout", "temporar", "connection", "network"])
 
 
-def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash", db=None, application_id=None) -> dict:
+from app.services.ai_quota_service import consume_ai_tokens
+
+def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash", db=None, application_id=None, service_type: str = "matching", user_id: int | None = None) -> dict:
     manager = _get_key_manager()
     max_retries = len(manager.keys)
     last_error = None
@@ -100,13 +102,18 @@ def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash", db=
             try:
                 session = db if db else SessionLocal()
                 ai_log = AiLog(
-                    service_type="matching",
+                    service_type=service_type,
                     application_id=application_id,
+                    user_id=user_id,
                     tokens_used=tokens,
                     processing_time_ms=processing_time_ms,
                     is_error=False
                 )
                 session.add(ai_log)
+                
+                if user_id and tokens > 0:
+                    consume_ai_tokens(session, user_id, tokens)
+                    
                 if db:
                     session.flush()
                 else:
@@ -131,8 +138,9 @@ def _gemini_json_response(prompt: str, model_name: str = "gemini-2.5-flash", db=
             try:
                 session = db if db else SessionLocal()
                 ai_log = AiLog(
-                    service_type="matching",
+                    service_type=service_type,
                     application_id=application_id,
+                    user_id=user_id,
                     processing_time_ms=processing_time_ms,
                     is_error=True,
                     error_message=str(e)[:1000]

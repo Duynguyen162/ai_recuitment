@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     ALGORITHM: str                          # dùng thuật toán nào để mã hóa token
     ACCESS_TOKEN_EXPIRE_MINUTES: int        # thời gian hết hạn của token
     BASE_URL: str
+    FRONTEND_URL: str = "http://localhost:3000"
     # CẤU HÌNH EMAIL
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""

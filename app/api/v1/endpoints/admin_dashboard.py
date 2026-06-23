@@ -20,12 +20,16 @@ from app.schemas.admin_schema import (
     AdminJobReportItem,
     AdminVerifyRequest,
     AiAlertConfigItem,
+    AiAlertConfigCreate,
     AiAlertConfigUpdateRequest,
     AiLogItem,
     AiMonitoringStats,
     JobActionRequest,
     LockCandidateRequest,
     ResolveReportRequest,
+    RoleAiQuotaItem,
+    RoleAiQuotaUpdateRequest,
+    TopAiUserUsageItem,
 )
 from app.schemas.base_schema import ResponseSchema
 
@@ -217,26 +221,26 @@ def get_job_reports(
 
 
 @router.put(
-    "/job-reports/{report_id}/resolve",
+    "/job-reports/{job_id}/resolve",
     response_model=ResponseSchema[dict],
-    summary="Xử lý / Bỏ qua báo cáo job",
+    summary="Xử lý / Bỏ qua tất cả báo cáo của một job",
 )
 def resolve_report(
-    report_id: int,
+    job_id: int,
     body: ResolveReportRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Chỉ cho phép chuyển sang **resolved** hoặc **dismissed**.
+    Đánh dấu tất cả báo cáo của một job là đã xử lý (resolved / dismissed).
     Bắt buộc truyền `admin_action` để ghi lại admin đã làm gì:
     - `closed_job`  — Đóng vĩnh viễn + khóa tin
     - `no_action`   — Bỏ qua, không có hành động
     """
     _require_admin(current_user)
-    report = crud.resolve_job_report(
+    report_result = crud.resolve_job_report(
         db,
-        report_id=report_id,
+        job_id=job_id,
         new_status=body.status,
         admin_action=body.admin_action,
         admin_note=body.admin_note,
@@ -244,11 +248,11 @@ def resolve_report(
     return ResponseSchema(
         success=True,
         data={
-            "id": report.id,
-            "status": report.status.value,
-            "admin_action": report.admin_action.value if report.admin_action else None,
-            "admin_note": report.admin_note,
-            "resolved_at": report.resolved_at.isoformat() if report.resolved_at else None,
+            "job_id": report_result["job_id"],
+            "status": report_result["status"].value,
+            "admin_action": report_result["admin_action"].value if report_result["admin_action"] else None,
+            "admin_note": report_result["admin_note"],
+            "resolved_at": report_result["resolved_at"].isoformat() if report_result["resolved_at"] else None,
         },
         error=None,
         meta=None,
@@ -411,6 +415,27 @@ def get_alert_configs(
     return ResponseSchema(success=True, data=configs, error=None, meta=None)
 
 
+@router.post(
+    "/ai-alert-configs",
+    response_model=ResponseSchema[AiAlertConfigItem],
+    summary="Tạo mới cấu hình cảnh báo AI",
+)
+def create_alert_config(
+    body: AiAlertConfigCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    config = crud.create_ai_alert_config(
+        db,
+        name=body.name,
+        metric=body.metric,
+        threshold=body.threshold,
+        is_active=body.is_active
+    )
+    return ResponseSchema(success=True, data=config, error=None, meta=None)
+
+
 @router.put(
     "/ai-alert-configs/{config_id}",
     response_model=ResponseSchema[AiAlertConfigItem],
@@ -430,3 +455,53 @@ def update_alert_config(
         threshold=body.threshold,
     )
     return ResponseSchema(success=True, data=config, error=None, meta=None)
+
+
+@router.get(
+    "/dashboard/ai-quotas/candidate",
+    response_model=ResponseSchema[RoleAiQuotaItem],
+    summary="Lấy hạn mức AI của Ứng viên",
+)
+def get_candidate_quota(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    # Tìm quota của candidate, nếu chưa có thì trả về mặc định
+    quota = crud.get_role_ai_quotas(db)
+    cand_quota = next((q for q in quota if q.role == "candidate"), None)
+    if not cand_quota:
+        cand_quota = RoleAiQuotaItem(role="candidate", daily_token_limit=5000)
+    return ResponseSchema(success=True, data=cand_quota, error=None, meta=None)
+
+
+@router.put(
+    "/dashboard/ai-quotas/candidate",
+    response_model=ResponseSchema[RoleAiQuotaItem],
+    summary="Cập nhật hạn mức AI cho Ứng viên",
+)
+def update_candidate_quota(
+    body: RoleAiQuotaUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    quota = crud.update_role_ai_quota(db, role="candidate", daily_token_limit=body.daily_token_limit)
+    return ResponseSchema(success=True, data=quota, error=None, meta=None)
+
+
+@router.get(
+    "/dashboard/ai-quotas/top-users",
+    response_model=ResponseSchema[List[TopAiUserUsageItem]],
+    summary="Hiển thị Top user sử dụng nhiều AI token nhất",
+)
+def get_top_ai_users(
+    limit: int = Query(10, description="Số lượng user tối đa cần hiển thị"),
+    role: Optional[str] = Query(None, description="Lọc theo role (ví dụ: candidate, hr_manager)"),
+    timeframe: Optional[str] = Query("today", description="Lọc theo thời gian: today, month"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    users = crud.get_top_ai_users(db, limit=limit, role=role, timeframe=timeframe)
+    return ResponseSchema(success=True, data=users, error=None, meta=None)

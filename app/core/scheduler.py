@@ -30,6 +30,5 @@ def check_and_reset_vip_status():
     finally:
         db.close()
 
-# Thêm job chạy định kỳ (Ví dụ: mỗi 60 phút sẽ kiểm tra 1 lần)
-# Bạn có thể đổi minutes=60 thành seconds=60 nếu muốn test nhanh
+# Thêm job chạy định kỳ (mỗi ngày 1 lần)
 scheduler.add_job(check_and_reset_vip_status, "interval", minutes=1440)

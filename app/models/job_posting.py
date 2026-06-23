@@ -15,6 +15,7 @@ class JobPosting(Base):
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     requirements = Column(Text, nullable=False)
+    benefits = Column(Text, nullable=False, server_default="")
     location = Column(String(255), nullable=True)
     
     # Trường JSON cốt lõi cho AI Matching

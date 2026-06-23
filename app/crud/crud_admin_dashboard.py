@@ -33,6 +33,7 @@ from app.models.companies import Company, CompanyMember, CompanyVerification, Co
 from app.models.job_posting import JobPosting
 from app.models.job_reports import JobReport
 from app.models.user import User
+from app.models.ai_quotas import RoleAiQuota, UserAiQuota
 
 
 def get_admin_dashboard_stats(db: Session) -> dict:
@@ -52,10 +53,10 @@ def get_admin_dashboard_stats(db: Session) -> dict:
         Company.verification_status == CompanyVerificationStatusEnum.pending
     ).count()
 
-    # Job bị "flag" = job đang bị paused hoặc bị Admin close
+    # Job bị "flag" = job đang bị paused và chưa bị Admin khóa
     flagged_jobs = db.query(JobPosting).filter(
-        JobPosting.status.in_([JobStatusEnum.paused, JobStatusEnum.closed]),
-        JobPosting.locked_by_admin == True,
+        JobPosting.status == JobStatusEnum.paused,
+        JobPosting.locked_by_admin == False,
     ).count()
 
     pending_reports = db.query(JobReport).filter(
@@ -256,12 +257,10 @@ def admin_update_company_status(
     return company
 
 def get_flagged_jobs(db: Session, page: int = 1, page_size: int = 20) -> tuple:
-    """Job bị flag = đang paused HOẶC đã bị Admin lock."""
+    """Job bị flag = đang paused và chưa bị Admin lock (cần xử lý)."""
     query = db.query(JobPosting).filter(
-        or_(
-            JobPosting.status == JobStatusEnum.paused,
-            JobPosting.locked_by_admin == True,
-        )
+        JobPosting.status == JobStatusEnum.paused,
+        JobPosting.locked_by_admin == False,
     )
     total = query.count()
     jobs = (
@@ -328,57 +327,91 @@ def get_job_reports(
     page: int = 1,
     page_size: int = 20,
 ) -> tuple:
-    query = db.query(JobReport).options(
-        joinedload(JobReport.job).joinedload(JobPosting.company),
-        joinedload(JobReport.reporter),
+    # 1. Tìm các job_id có report (kèm count và max_created_at)
+    query = db.query(
+        JobReport.job_id,
+        func.count(JobReport.id).label("report_count"),
+        func.max(JobReport.created_at).label("latest_created_at")
     )
     if status:
         query = query.filter(JobReport.status == status)
     if admin_action:
         query = query.filter(JobReport.admin_action == admin_action)
+        
+    query = query.group_by(JobReport.job_id)
     total = query.count()
-    reports = (
-        query.order_by(JobReport.created_at.desc())
+    
+    stats = (
+        query.order_by(func.max(JobReport.created_at).desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
-    result = [
-        {
-            "id": r.id,
-            "job_id": r.job_id,
-            "job_title": r.job.title if r.job else "",
-            "company_name": r.job.company.name if r.job and r.job.company else "",
-            "reporter_email": r.reporter.email if r.reporter else None,
-            "reason": r.reason,
-            "status": r.status,
-            "admin_action": r.admin_action,
-            "admin_note": r.admin_note,
-            "resolved_at": r.resolved_at,
-            "created_at": r.created_at,
-        }
-        for r in reports
-    ]
+    
+    if not stats:
+        return [], 0
+        
+    job_ids = [s.job_id for s in stats]
+    
+    # 2. Lấy chi tiết các report thuộc những job_id này
+    detail_query = db.query(JobReport).options(
+        joinedload(JobReport.job).joinedload(JobPosting.company)
+    ).filter(JobReport.job_id.in_(job_ids))
+    
+    if status:
+        detail_query = detail_query.filter(JobReport.status == status)
+    if admin_action:
+        detail_query = detail_query.filter(JobReport.admin_action == admin_action)
+        
+    reports = detail_query.all()
+    
+    # 3. Gom nhóm theo job_id
+    grouped = {}
+    for r in reports:
+        if r.job_id not in grouped:
+            grouped[r.job_id] = {
+                "job_id": r.job_id,
+                "job_title": r.job.title if r.job else "",
+                "company_name": r.job.company.name if r.job and r.job.company else "",
+                "reasons": set(),
+                "status": r.status,
+                "admin_action": r.admin_action,
+                "admin_note": r.admin_note,
+                "resolved_at": r.resolved_at,
+            }
+        if r.reason:
+            grouped[r.job_id]["reasons"].add(r.reason)
+            
+    # 4. Trộn với thống kê
+    result = []
+    for s in stats:
+        data = grouped.get(s.job_id)
+        if data:
+            data["report_count"] = s.report_count
+            data["created_at"] = s.latest_created_at
+            data["reasons"] = list(data["reasons"])
+            result.append(data)
+            
     return result, total
 
 
 def resolve_job_report(
     db: Session,
-    report_id: int,
+    job_id: int,
     new_status: JobReportStatusEnum,
     admin_action: ReportAdminActionEnum,
     admin_note: Optional[str] = None,
-) -> JobReport:
+) -> dict:
     """
-    Xử lý báo cáo job:
+    Xử lý tất cả báo cáo của một job_id:
     - Lưu status mới (resolved / dismissed)
     - Lưu admin_action để biết admin đã làm gì
     - Lưu admin_note (nếu có)
     - Đánh dấu thời điểm xử lý
     """
-    report = db.query(JobReport).filter(JobReport.id == report_id).first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Không tìm thấy báo cáo")
+    reports = db.query(JobReport).filter(JobReport.job_id == job_id).all()
+    if not reports:
+        raise HTTPException(status_code=404, detail="Không tìm thấy báo cáo nào cho job này")
 
     if new_status == JobReportStatusEnum.pending:
         raise HTTPException(
@@ -386,20 +419,30 @@ def resolve_job_report(
             detail="Không thể đặt báo cáo về trạng thái pending",
         )
 
-    if report.status != JobReportStatusEnum.pending:
+    pending_reports = [r for r in reports if r.status == JobReportStatusEnum.pending]
+    if not pending_reports:
         raise HTTPException(
             status_code=400,
-            detail=f"Báo cáo đã được xử lý với trạng thái '{report.status.value}'",
+            detail="Tất cả báo cáo của job này đã được xử lý",
         )
 
-    report.status       = new_status
-    report.admin_action = admin_action
-    report.admin_note   = admin_note
-    report.resolved_at  = datetime.now(timezone.utc)
+    resolved_time = datetime.now(timezone.utc)
+    for report in pending_reports:
+        report.status       = new_status
+        report.admin_action = admin_action
+        report.admin_note   = admin_note
+        report.resolved_at  = resolved_time
 
     db.commit()
-    db.refresh(report)
-    return report
+    
+    # Return a grouped response to match what the API expects
+    return {
+        "job_id": job_id,
+        "status": new_status,
+        "admin_action": admin_action,
+        "admin_note": admin_note,
+        "resolved_at": resolved_time,
+    }
 
 def get_admin_candidates(
     db: Session,
@@ -641,6 +684,25 @@ def get_ai_alert_configs(db: Session) -> List[AiAlertConfig]:
     return db.query(AiAlertConfig).order_by(AiAlertConfig.id).all()
 
 
+def create_ai_alert_config(
+    db: Session,
+    name: str,
+    metric: str,
+    threshold: int,
+    is_active: bool = True
+) -> AiAlertConfig:
+    config = AiAlertConfig(
+        name=name,
+        metric=metric,
+        threshold=threshold,
+        is_active=is_active
+    )
+    db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config
+
+
 def update_ai_alert_config(
     db: Session,
     config_id: int,
@@ -657,3 +719,53 @@ def update_ai_alert_config(
     db.commit()
     db.refresh(config)
     return config
+
+
+def get_role_ai_quotas(db: Session) -> List[RoleAiQuota]:
+    return db.query(RoleAiQuota).order_by(RoleAiQuota.role).all()
+
+
+def update_role_ai_quota(db: Session, role: str, daily_token_limit: int) -> RoleAiQuota:
+    quota = db.query(RoleAiQuota).filter(RoleAiQuota.role == role).first()
+    if not quota:
+        quota = RoleAiQuota(role=role, daily_token_limit=daily_token_limit)
+        db.add(quota)
+    else:
+        quota.daily_token_limit = daily_token_limit
+    
+    db.commit()
+    db.refresh(quota)
+    return quota
+
+
+def get_top_ai_users(db: Session, limit: int = 10, role: str = None, timeframe: str = "today") -> list:
+    today = datetime.now(timezone.utc).date()
+    
+    query = db.query(
+        User.id,
+        User.email,
+        User.role,
+        func.sum(UserAiQuota.tokens_used).label("total_tokens")
+    ).join(UserAiQuota, UserAiQuota.user_id == User.id)
+    
+    if timeframe == "today":
+        query = query.filter(UserAiQuota.date == today)
+    elif timeframe == "month":
+        start_of_month = today.replace(day=1)
+        query = query.filter(UserAiQuota.date >= start_of_month)
+        
+    if role:
+        query = query.filter(User.role == role)
+        
+    query = query.group_by(User.id)
+    rows = query.order_by(func.sum(UserAiQuota.tokens_used).desc()).limit(limit).all()
+    
+    result = []
+    for row in rows:
+        result.append({
+            "user_id": row.id,
+            "email": row.email,
+            "role": row.role.value if row.role else "unknown",
+            "tokens_used": int(row.total_tokens) if row.total_tokens else 0
+        })
+    return result

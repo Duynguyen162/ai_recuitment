@@ -10,6 +10,7 @@ class SubscriptionPlanBase(BaseModel):
     cycle: Literal["monthly", "yearly"]
     price_vnd: int
     vip_duration_days: int
+    daily_ai_token_limit: int = 10000
     is_active: bool = True
 
 
@@ -20,6 +21,7 @@ class SubscriptionPlanCreate(SubscriptionPlanBase):
 class SubscriptionPlanUpdate(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+    daily_ai_token_limit: int | None = None
 
 
 class SubscriptionPlanResponse(SubscriptionPlanBase):
