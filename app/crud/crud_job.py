@@ -215,21 +215,23 @@ def update_job_status(
 
 
 def create_job_posting(db: Session, company_id: int, user_id: int, job_in: JobPostingCreate):
-    """Lưu job mới vào CSDL, mặc định tạo ở trạng thái draft."""
+    """Lưu job mới vào CSDL, mặc định tạo ở trạng thái published nếu không truyền status."""
     data = job_in.model_dump()
     if isinstance(data.get("tags"), str):
         import json
 
         data["tags"] = json.loads(data["tags"])
 
-    data.pop("status", None)
+    status = data.pop("status", JobStatusEnum.published)
+    if status is None:
+        status = JobStatusEnum.published
 
     try:
         db_job = JobPosting(
             **data,
             company_id=company_id,
             created_by=user_id,
-            status=JobStatusEnum.draft,
+            status=status,
         )
         db.add(db_job)
         db.commit()

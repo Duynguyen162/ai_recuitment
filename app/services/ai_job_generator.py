@@ -1,7 +1,9 @@
 import json
 from app.services.ai_matching import _gemini_json_response
 
-def generate_job_posting_with_ai(prompt: str, db=None) -> dict:
+from app.models.user import User
+
+def generate_job_posting_with_ai(prompt: str, db=None, user: User | None = None) -> dict:
     """Gọi Gemini AI để sinh ra nội dung Job Posting dựa trên prompt ngắn gọn."""
     system_prompt = f"""
     Bạn là một chuyên gia Tuyển dụng Nhân sự (HR).
@@ -17,6 +19,7 @@ def generate_job_posting_with_ai(prompt: str, db=None) -> dict:
       "title": "Tên chức danh công việc",
       "description": "Mô tả công việc chi tiết, chuyên nghiệp, hấp dẫn. Dùng \\n để xuống dòng, KHÔNG dùng thẻ HTML.",
       "requirements": "Yêu cầu chi tiết. Dùng \\n để xuống dòng, dấu '-' cho các mục. KHÔNG dùng thẻ HTML.",
+      "benefits": "Quyền lợi chi tiết. Dùng \\n để xuống dòng, dấu '-' cho các mục. KHÔNG dùng thẻ HTML.",
       "location": "Địa chỉ làm việc cụ thể nếu có, hoặc để trống",
       "tags": ["Từ khóa 1", "Từ khóa 2", "Từ khóa 3"],
       "salary_min": <Số nguyên, mức lương tối thiểu (nếu có đề cập), hoặc null>,
@@ -34,7 +37,8 @@ def generate_job_posting_with_ai(prompt: str, db=None) -> dict:
         prompt=system_prompt,
         model_name="gemini-2.5-flash",
         db=db,
-        service_type="job_generation"
+        service_type="job_generation",
+        user_id=user.id if user else None
     )
     
     return generated_json

@@ -24,11 +24,11 @@ async def upload_general_file(
     file: UploadFile = File(...)
 ):
     folder_name = folder.value
-    # 1. Tạo thư mục đích
+    # Tạo thư mục đích
     target_dir = os.path.join(UPLOAD_ROOT, folder_name)
     os.makedirs(target_dir, exist_ok=True)
     
-    # 2. Đổi tên file để tránh trùng lặp bằng UUID
+    # Đổi tên file để tránh trùng lặp bằng UUID
     ext = os.path.splitext(file.filename)[1].lower()
     forbidden_extensions = [".exe", ".sh", ".bat", ".php", ".js"]
     if ext in forbidden_extensions:
@@ -38,7 +38,7 @@ async def upload_general_file(
     file_path = os.path.join(target_dir, unique_filename)
     file_url = f"{settings.BASE_URL}/{file_path.replace(os.sep, '/')}"
     
-    # 3. Lưu file
+    # Lưu file
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)

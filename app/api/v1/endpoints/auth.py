@@ -167,7 +167,7 @@ def forgot_password(
     user = get_user_by_email(db, request_in.email)
     if user:
         token = create_password_reset_token(user.email)
-        reset_link = f"http://localhost:3000/auth/reset-password?token={token}"
+        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
         background_tasks.add_task(send_reset_password_email, user.email, reset_link)
 
     return {

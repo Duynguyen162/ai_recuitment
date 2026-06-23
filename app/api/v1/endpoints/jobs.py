@@ -31,6 +31,8 @@ from app.services.ai_job_generator import generate_job_posting_with_ai
 
 router = APIRouter()
 
+from app.services.ai_quota_service import check_ai_quota
+
 @router.post(
     "/generate_ai",
     response_model=ResponseSchema[dict],
@@ -66,8 +68,11 @@ def generate_job_with_ai(
             detail="Công ty chưa là VIP, không thể dùng tính năng này",
         )
 
+    # Check AI Quota
+    check_ai_quota(db, current_user)
+
     # Gọi AI Generator
-    generated_data = generate_job_posting_with_ai(prompt=request.prompt, db=db)
+    generated_data = generate_job_posting_with_ai(prompt=request.prompt, db=db, user=current_user)
 
     return ResponseSchema(
         success=True,
@@ -231,7 +236,7 @@ def create_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """HR tạo job mới, mặc định lưu ở draft."""
+    """HR tạo job mới, mặc định lưu ở published trừ khi được chỉ định."""
     if current_user.role != RoleEnum.hr_manager:
         raise HTTPException(status_code=403, detail="Chỉ nhà tuyển dụng mới được đăng tin")
 

@@ -15,6 +15,7 @@ from app.core.logger import logger
 from app.services.ngrok_service import public_url, start_ngrok, stop_ngrok
 import app.db.base_import_class
 from app.core.scheduler import scheduler
+from app.core.config import settings
 
 load_dotenv()
 
@@ -78,6 +79,7 @@ app = FastAPI(
 
 origins = [
     "http://localhost:3000",
+    settings.FRONTEND_URL,
 ]
 
 app.add_middleware(

@@ -13,6 +13,7 @@ class SubscriptionPlan(Base):
     cycle = Column(String(32), nullable=False, index=True)  # monthly/yearly
     price_vnd = Column(Integer, nullable=False)
     vip_duration_days = Column(Integer, nullable=False)
+    daily_ai_token_limit = Column(Integer, nullable=False, server_default="10000", default=10000)
     is_active = Column(Boolean, nullable=False, server_default="true", default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

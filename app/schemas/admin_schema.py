@@ -125,12 +125,11 @@ class AdminJobFlaggedItem(BaseModel):
 
 
 class AdminJobReportItem(BaseModel):
-    id: int
     job_id: int
     job_title: str
     company_name: str
-    reporter_email: Optional[str] = None
-    reason: str
+    report_count: int
+    reasons: List[str]
     status: JobReportStatusEnum
     # Chi tiết xử lý (chỉ có sau khi Admin đã xử lý)
     admin_action: Optional[ReportAdminActionEnum] = None
@@ -251,9 +250,35 @@ class AiAlertConfigItem(BaseModel):
         from_attributes = True
 
 
+class AiAlertConfigCreate(BaseModel):
+    name: str
+    metric: str
+    threshold: int
+    is_active: bool = True
+
+
 class AiAlertConfigUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
     threshold: Optional[int] = None
+
+
+class RoleAiQuotaItem(BaseModel):
+    role: str
+    daily_token_limit: int
+
+    class Config:
+        from_attributes = True
+
+
+class RoleAiQuotaUpdateRequest(BaseModel):
+    daily_token_limit: int
+
+
+class TopAiUserUsageItem(BaseModel):
+    user_id: int
+    email: str
+    role: str
+    tokens_used: int
 
 
 class TokenUsageByHour(BaseModel):

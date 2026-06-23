@@ -25,7 +25,7 @@ class Application(Base):
     
     job_posting = relationship("JobPosting", back_populates="applications")
     candidate_profile = relationship("CandidateProfile", back_populates="applications")
-    ai_analysis = relationship("AiMatchingScore",back_populates="application",uselist=False)
+    ai_analysis = relationship("AiMatchingScore", back_populates="application", uselist=False, cascade="all, delete-orphan")
     parsed_cv_data = relationship("ParsedCVData", back_populates="application", uselist=False, cascade="all, delete-orphan")
     
     cv_uploads = relationship("CVUpload", back_populates="applications")

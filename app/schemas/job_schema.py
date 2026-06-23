@@ -20,6 +20,7 @@ class JobPostingBase(BaseModel):
     title: str = Field(..., description="Tiêu đề công việc")
     description: str = Field(..., description="Mô tả công việc")
     requirements: str = Field(..., description="Yêu cầu ứng viên")
+    benefits: str = Field(..., description="Quyền lợi ứng viên")
     location: str | None = Field(None, description="Địa điểm làm việc")
     tags: list[str] = Field(default=[], description="Danh sách từ khóa kỹ năng (vd: ['Python', 'FastAPI'])")
     salary_min: int | None = None
@@ -29,12 +30,13 @@ class JobPostingBase(BaseModel):
     expired_at: datetime
 
 class JobPostingCreate(JobPostingBase):
-    pass
+    status: JobStatusEnum | None = JobStatusEnum.published
 
 class JobPostingUpdate(BaseModel):
     title: str = Field(..., description="Tiêu đề công việc")
     description: str = Field(..., description="Mô tả công việc")
     requirements: str = Field(..., description="Yêu cầu ứng viên")
+    benefits: str = Field(..., description="Quyền lợi ứng viên")
     location: str | None = Field(None, description="Địa điểm làm việc")
     tags: list[str] = Field(default=[], description="Danh sách từ khóa kỹ năng")
     salary_min: int | None = None
@@ -48,6 +50,7 @@ class JobDetailResponse(BaseModel):
     title: str
     description: str # Mô tả chi tiết
     requirements: str # Yêu cầu chi tiết
+    benefits: str # Quyền lợi
     location: str | None = None
     salary_min: int | None = None
     salary_max: int | None = None
