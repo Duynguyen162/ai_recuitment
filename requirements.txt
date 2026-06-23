@@ -25,3 +25,6 @@ python-docx
 openpyxl
 playwright
 pyngrok
+langchain-text-splitters
+apscheduler
+jinja2
