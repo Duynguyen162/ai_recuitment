@@ -5,9 +5,12 @@ psycopg2-binary
 python-dotenv
 python-jose
 passlib[bcrypt]
+bcrypt
 python-multipart
 email-validator
 fastapi-mail
+pydantic-settings
+alembic
 
 langchain
 langchain-community
