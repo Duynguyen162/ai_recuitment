@@ -5,7 +5,7 @@ from urllib.parse import unquote, urlparse
 
 import docx
 from chromadb.config import Settings as ChromaSettings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
