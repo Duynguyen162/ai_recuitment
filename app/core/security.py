@@ -4,30 +4,32 @@ from typing import Optional
 from jose import jwt, JWTError
 from app.core.config import settings
 import hashlib
-# pyrefly: ignore [missing-import]
-from passlib.context import CryptContext
-
-# Khởi tạo bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt
 
 def get_password_hash(password: str) -> str:
-    """Mã hóa mật khẩu  dùng BCrypt"""
-    # Giới hạn password tại 72 bytes TRƯỚC khi hash
-    if len(password.encode("utf-8")) > 72:
+    """Mã hóa mật khẩu dùng BCrypt"""
+    password_bytes = password.encode("utf-8")
+    if len(password_bytes) > 72:
         raise HTTPException(
             status_code=400,
             detail="Mật khẩu không được vượt quá 72 bytes"
         )
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Xác minh mật khẩu dùng BCrypt"""
-    if len(plain_password.encode('utf-8')) > 72:
+    plain_bytes = plain_password.encode("utf-8")
+    if len(plain_bytes) > 72:
         raise HTTPException(
             status_code=400,
             detail="Mật khẩu không được vượt quá 72 bytes"
         )
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_bytes, hashed_password.encode("utf-8"))
+    except Exception:
+        return False
 
 # Tạo token JWT
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

@@ -4,7 +4,6 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 python-jose
-passlib[bcrypt]
 bcrypt
 python-multipart
 email-validator

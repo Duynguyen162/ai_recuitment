@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     NGROK_DOMAIN: str = ""
     NGROK_PORT: int = 8000
     
-    ADMIN_EMAIL: str = "admin@example.com"
-    ADMIN_PASSWORD: str = "Admin123456@"
+    ADMIN_EMAIL: str
+    ADMIN_PASSWORD: str 
     
     model_config = {
         "env_file": ".env",
