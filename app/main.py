@@ -96,10 +96,41 @@ app.include_router(api_router, prefix="/api/v1")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
+def init_admin():
+    from app.db.database import SessionLocal
+    from app.models.user import User
+    from app.core.enum import RoleEnum, StatusEnum
+    from app.core.security import get_password_hash
+
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.role == RoleEnum.admin).first()
+        if not admin:
+            logger.info("Chưa tìm thấy tài khoản Admin. Đang khởi tạo tài khoản mặc định...")
+            hashed_password = get_password_hash(settings.ADMIN_PASSWORD)
+            new_admin = User(
+                email=settings.ADMIN_EMAIL,
+                password_hash=hashed_password,
+                role=RoleEnum.admin,
+                status=StatusEnum.active
+            )
+            db.add(new_admin)
+            db.commit()
+            logger.info(f"Khởi tạo tài khoản Admin thành công: {settings.ADMIN_EMAIL}")
+        else:
+            logger.info("Tài khoản Admin đã tồn tại.")
+    except Exception as e:
+        logger.error(f"Lỗi khởi tạo tài khoản Admin: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def on_startup():
     scheduler.start()
     logger.info("APScheduler started")
+    init_admin()
     try:
         url = start_ngrok()
         if url:

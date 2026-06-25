@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     ALGORITHM: str                          # dùng thuật toán nào để mã hóa token
     ACCESS_TOKEN_EXPIRE_MINUTES: int        # thời gian hết hạn của token
     BASE_URL: str
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str
     # CẤU HÌNH EMAIL
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""
@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     NGROK_AUTHTOKEN: str = ""
     NGROK_DOMAIN: str = ""
     NGROK_PORT: int = 8000
+    
+    ADMIN_EMAIL: str = "admin@example.com"
+    ADMIN_PASSWORD: str = "Admin123456@"
+    
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
