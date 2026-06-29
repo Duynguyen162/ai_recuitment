@@ -17,10 +17,22 @@ def get_user_ai_limit(db: Session, user: User) -> int:
         member = db.query(CompanyMember).filter(CompanyMember.user_id == user.id).first()
         if member:
             company = db.query(Company).filter(Company.id == member.company_id).first()
-            if company and company.subscription_plan_id:
-                plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == company.subscription_plan_id).first()
-                if plan:
-                    return plan.daily_ai_token_limit
+            if company:
+                if company.is_vip:
+                    from app.models.payment_transactions import PaymentTransaction
+                    latest_txn = db.query(PaymentTransaction).filter(
+                        PaymentTransaction.company_id == company.id,
+                        PaymentTransaction.status == "completed"
+                    ).order_by(PaymentTransaction.id.desc()).first()
+                    
+                    if latest_txn and latest_txn.plan_code:
+                        plan = db.query(SubscriptionPlan).filter(
+                            SubscriptionPlan.code == latest_txn.plan_code
+                        ).first()
+                        if plan:
+                            return plan.daily_ai_token_limit
+                    # Fallback cho VIP nếu không tìm thấy giao dịch
+                    return 10000
         # Mặc định nếu không có gói VIP
         return 5000
 

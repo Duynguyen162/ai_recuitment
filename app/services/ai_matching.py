@@ -298,21 +298,36 @@ def _upsert_parsed_cv_data(db, application: Application, include_ai_parse: bool)
 
 def _score_prompt(job, parsed_json: dict) -> str:
     return f"""
-    Ban la chuyen gia tuyen dung. Hay cham diem do phu hop giua CV da parse va Job.
+    Bạn là một chuyên gia tuyển dụng cao cấp. Hãy đánh giá và chấm điểm độ phù hợp giữa thông tin ứng viên (CV_JSON) và tin tuyển dụng (JOB).
+
     [JOB]
-    - Tieu de: {job.title}
-    - Tags: {job.tags}
-    - Requirements: {job.requirements}
+    - Tiêu đề: {job.title}
+    - Từ khóa kỹ năng: {job.tags}
+    - Yêu cầu công việc: {job.requirements}
+
     [CV_JSON]
     {json.dumps(parsed_json, ensure_ascii=False)}
-    Tra ve JSON duy nhat:
+
+    YÊU CẦU ĐÁNH GIÁ (Phải tuân thủ nghiêm ngặt):
+    1. Đánh giá đúng trọng tâm, ngắn gọn và đủ ý. Không viết dài dòng lê thê hay lặp lại thông tin.
+    2. "strengths" (Điểm mạnh): Danh sách các điểm mạnh thực sự nổi bật của ứng viên so với yêu cầu công việc. Mỗi gạch đầu dòng phải cực kỳ ngắn gọn (không quá 15 từ), nêu bật kỹ năng hoặc số năm kinh nghiệm khớp trực tiếp với JD.
+    3. "weaknesses" (Điểm yếu/Thiếu sót): Danh sách các kỹ năng hoặc kinh nghiệm yêu cầu trong JD mà ứng viên còn thiếu hoặc yếu. Mỗi gạch đầu dòng phải cực kỳ ngắn gọn (không quá 15 từ).
+    4. "explanation" (Tóm tắt lý do): Lời giải thích tóm tắt vì sao chấm số điểm đó. Tối đa 2-3 câu ngắn gọn.
+
+    Trả về một đối tượng JSON duy nhất có cấu trúc sau (Không chứa bất kỳ văn bản nào khác ngoài JSON):
     {{
-        "score": <0-100>,
-        "strengths": ["..."],
-        "weaknesses": ["..."],
-        "explanation": "..."
+        "score": <Điểm số từ 0 đến 100>,
+        "strengths": [
+            "Gạch đầu dòng 1 ngắn gọn",
+            "Gạch đầu dòng 2 ngắn gọn"
+        ],
+        "weaknesses": [
+            "Gạch đầu dòng 1 ngắn gọn",
+            "Gạch đầu dòng 2 ngắn gọn"
+        ],
+        "explanation": "Tóm tắt ngắn gọn trong 2-3 câu."
     }}
-    Bat buoc tieng Viet.
+    Bắt buộc trả về bằng Tiếng Việt.
     """
 
 

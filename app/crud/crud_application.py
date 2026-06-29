@@ -338,6 +338,7 @@ def list_hr_candidates(
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.user),
             joinedload(Application.cv_uploads),
             joinedload(Application.job_posting),
+            joinedload(Application.interviews),
         )
         .filter(JobPosting.company_id == member.company_id)
     )
@@ -523,6 +524,7 @@ def get_candidate_profile_by_application_for_hr(
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.experiences),
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.educations),
             joinedload(Application.candidate_profile).joinedload(CandidateProfile.certifications),
+            joinedload(Application.interviews),
         )
         .filter(
             Application.id == application_id,
@@ -546,6 +548,19 @@ def get_candidate_profile_by_application_for_hr(
     profile = application.candidate_profile
     if not profile or not profile.user:
         raise HTTPException(status_code=404, detail="Khong tim thay du lieu ung vien")
+
+    interview_data = None
+    if application.interviews:
+        latest_interview = sorted(application.interviews, key=lambda i: i.interview_time, reverse=True)[0]
+        mode = "online" if latest_interview.meeting_link else "offline"
+        interview_data = {
+            "id": latest_interview.id,
+            "interview_time": latest_interview.interview_time,
+            "location": latest_interview.location,
+            "meeting_link": latest_interview.meeting_link,
+            "mode": mode,
+            "notes": latest_interview.notes,
+        }
 
     return {
         "full_name": profile.full_name,
@@ -578,6 +593,7 @@ def get_candidate_profile_by_application_for_hr(
             }
             for cert in (profile.certifications or [])
         ],
+        "interview": interview_data,
     }
 
 
