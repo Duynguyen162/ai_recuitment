@@ -31,6 +31,10 @@ from app.models.notifications import Notification
 from app.models.ai_logs import AiLog, AiAlertConfig
 from app.models.subscription_plans import SubscriptionPlan
 from app.models.ai_quotas import UserAiQuota, RoleAiQuota
+from app.models.parsed_cv_data import ParsedCVData
+from app.models.ai_matching_cache import AiMatchingCache
+from app.models.ai_matching_jobs import AiMatchingJob
+from app.models.payment_transactions import PaymentTransaction
 #----------------------------------------------#
 
 

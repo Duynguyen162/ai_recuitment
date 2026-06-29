@@ -25,6 +25,15 @@ class ApplicationResponse(BaseModel):
         from_attributes = True
 
 
+class InterviewDetailResponse(BaseModel):
+    id: int | None = None
+    interview_time: datetime
+    location: str | None = None
+    meeting_link: str | None = None
+    mode: str
+    notes: str | None = None
+
+
 class CandidateAppliedResponse(BaseModel):
     application_id: int
     candidate_id: int
@@ -41,6 +50,7 @@ class CandidateAppliedResponse(BaseModel):
     cv_name: str | None = None
     cv_url: str | None = None
     job_title: str | None = None
+    interview: InterviewDetailResponse | None = None
 
     class Config:
         from_attributes = True
@@ -59,13 +69,6 @@ class CandidatesStatsResponse(BaseModel):
     hired: int
     rejected: int
     left_company: int
-
-class InterviewDetailResponse(BaseModel):
-    interview_time: datetime
-    location: str | None = None
-    meeting_link: str | None = None
-    mode: str
-    notes: str | None = None
 
 
 class ApplicationDetailResponse(BaseModel):
@@ -114,6 +117,7 @@ class CandidateProfileForHrResponse(BaseModel):
     experiences: List[CandidateExperienceItem] = Field(default_factory=list)
     educations: List[CandidateEducationItem] = Field(default_factory=list)
     certifications: List[CandidateCertificationItem] = Field(default_factory=list)
+    interview: InterviewDetailResponse | None = None
 
 
 class AiScoreStatusResponse(BaseModel):

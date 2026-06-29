@@ -305,26 +305,41 @@ def get_hr_candidates(
         search=search,
     )
 
-    data = [
-        CandidateAppliedResponse(
-            application_id=application.id,
-            candidate_id=application.candidate_profile.id,
-            full_name=application.candidate_profile.full_name,
-            email=application.candidate_profile.user.email,
-            phone=application.candidate_profile.phone,
-            avatar_url=application.candidate_profile.avatar_url,
-            years_of_experience=application.candidate_profile.years_of_experience,
-            skill_tags=application.candidate_profile.skill_tags or [],
-            status=application.status.value,
-            cv_type=application.cv_type,
-            applied_at=application.applied_at,
-            cv_id=application.cv_upload_id,
-            cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
-            cv_url=f"{settings.BASE_URL}/{application.cv_uploads.file_url}" if application.cv_uploads else None,
-            job_title=application.job_posting.title if application.job_posting else None,
+    data = []
+    for application in applications:
+        interview_data = None
+        if application.interviews:
+            latest_interview = sorted(application.interviews, key=lambda i: i.interview_time, reverse=True)[0]
+            mode = "online" if latest_interview.meeting_link else "offline"
+            interview_data = InterviewDetailResponse(
+                id=latest_interview.id,
+                interview_time=latest_interview.interview_time,
+                location=latest_interview.location,
+                meeting_link=latest_interview.meeting_link,
+                mode=mode,
+                notes=latest_interview.notes,
+            )
+
+        data.append(
+            CandidateAppliedResponse(
+                application_id=application.id,
+                candidate_id=application.candidate_profile.id,
+                full_name=application.candidate_profile.full_name,
+                email=application.candidate_profile.user.email,
+                phone=application.candidate_profile.phone,
+                avatar_url=application.candidate_profile.avatar_url,
+                years_of_experience=application.candidate_profile.years_of_experience,
+                skill_tags=application.candidate_profile.skill_tags or [],
+                status=application.status.value,
+                cv_type=application.cv_type,
+                applied_at=application.applied_at,
+                cv_id=application.cv_upload_id,
+                cv_name=application.cv_uploads.file_name if application.cv_uploads else None,
+                cv_url=f"{settings.BASE_URL}/{application.cv_uploads.file_url}" if application.cv_uploads else None,
+                job_title=application.job_posting.title if application.job_posting else None,
+                interview=interview_data,
+            )
         )
-        for application in applications
-    ]
 
     return PaginatedCandidatesResponse(
         data=data,

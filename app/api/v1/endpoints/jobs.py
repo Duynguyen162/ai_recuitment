@@ -204,7 +204,7 @@ def change_job_status(
 
     if final_action == JobStatusActionEnum.publish:
         company = db.query(Company).filter(Company.id == member.company_id).first()
-        company_name = company.company_name if company else "Một công ty bạn theo dõi"
+        company_name = company.name if company else "Một công ty bạn theo dõi"
         
         followers = db.query(CompanyFollow).filter(CompanyFollow.company_id == member.company_id).all()
         for f in followers:
